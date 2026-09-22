@@ -942,11 +942,19 @@ def age_hours(stamp: str) -> float:
 
 def request_counts(root: Path) -> dict:
     reqs = load_requests(root)
+    # Requests addressed to the *other* consumer share this state directory. They are not this
+    # side's work, but counting them separately is what lets a reader reconcile the two sides
+    # without knowing the filter exists — and NOT counting them as ours is what stopped a parked
+    # ask looking like this side's pending work (a false "unactioned" alarm, 2026-09-22).
+    mine_ids = {r.get("message_id") for r in reqs}
+    theirs = [r for r in load_requests(root, only_mine=False) if r.get("message_id") not in mine_ids]
     pending = [r for r in reqs if r.get("status") == "pending"]
     closed = [r for r in reqs if r.get("status") != "pending"]
     oldest = max((age_hours(r.get("parked_at", "")) for r in pending), default=0.0)
     return {"pending": len(pending), "closed": len(closed), "oldest_h": oldest,
-            "pending_list": pending, "closed_list": closed}
+            "pending_list": pending, "closed_list": closed,
+            "theirs_pending": len([r for r in theirs if r.get("status") == "pending"]),
+            "theirs_closed": len([r for r in theirs if r.get("status") != "pending"])}
 
 
 def archive_request_file(root: Path, d: dict) -> Path | None:
@@ -1060,8 +1068,9 @@ def write_request_note(root: Path, vault: Path, dry_run: bool) -> Path | None:
         "\n"
         "# Mailbox Requests\n"
         "\n"
-        "Asks that arrived on the DockerVM ↔ Mac mailbox (`task_type: task_request`, or `kind: task`)\n"
-        "and are waiting for a **reasoning session** to action them. An automated consumer never\n"
+        "Asks **this side received** (`consumer: hermes-mac`) on the DockerVM ↔ Mac mailbox\n"
+        "(`task_type: task_request`, or `kind: task`) and are waiting for a **reasoning session** to\n"
+        "action them. An automated consumer never\n"
         "executes a request: it parks it here and in `requests/` in the queue, and only a session\n"
         "closes it — with a receipt (`dev_update` / `change_type: modified` / `in_reply_to` = the\n"
         "request id) or as declined/expired. An unclaimed request is never failed for going\n"
@@ -1082,6 +1091,15 @@ def write_request_note(root: Path, vault: Path, dry_run: bool) -> Path | None:
         "| Closed | How | Request | id |\n"
         "| --- | --- | --- | --- |\n"
         + ("\n".join(closed) if closed else "| — | — | _none yet_ | |") + "\n"
+        "\n"
+        "## Scope\n"
+        "\n"
+        "This note lists requests **addressed to this side** (`hermes-mac`). Requests this side *sent*\n"
+        "are closed by the other host and are deliberately **not** mirrored here — mirroring them is what\n"
+        "once made the other side's parked mail read as this side's pending work.\n"
+        "\n"
+        f"Right now: **{rc['pending']} pending here**, {rc['closed']} closed here; "
+        f"{rc['theirs_pending']} pending and {rc['theirs_closed']} closed on the other side (not this side's work).\n"
         "\n"
         "---\n"
         "\n"
@@ -1492,7 +1510,10 @@ def main(argv=None) -> int:
 
     if args.requests:
         rc = request_counts(root)
-        out(f"parked requests: {rc['pending']} pending, {rc['closed']} closed")
+        other = (f"; {rc['theirs_pending']} pending and {rc['theirs_closed']} closed on the other side"
+                 f" (addressed to the other consumer — not this side's work)")
+        out(f"parked requests: {rc['pending']} pending, {rc['closed']} closed"
+            + (other if (rc["theirs_pending"] or rc["theirs_closed"]) else ""))
         for r in rc["pending_list"]:
             out(f"\n  PENDING  {r['message_id']}  ({age_hours(r.get('parked_at','')):.1f} h, "
                 f"from {r.get('author')}{'' if r.get('typed') else ', UNTYPED kind=task'})")

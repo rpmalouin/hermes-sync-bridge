@@ -631,6 +631,46 @@ def test_carding_optin():
     check("and a CHECKED box — done cards are checked cards", txt[c:c+20].startswith("- [x]"), txt[c:c+20])
 
 
+def test_request_note_scope():
+    banner("TEST 12 — the request note lists THIS side's requests, and says so")
+    # Their ask of 2026-09-22 read my note as stale because it wanted three closes listed that were
+    # requests *I sent them* — excluded here on purpose, since mirroring them is what once made the
+    # other side's parked mail look like this side's pending work. The filter is right; the note just
+    # never said whose requests it lists. Now it does, and it reports both sides' counts.
+    mailbox, vault, home = new_fixture("t12-note-scope")
+    env = env_for(mailbox, vault, home)
+    run_ingest(env, "--provision")
+
+    mine = "20260922T180000Z-aaaa0001"
+    (mailbox / "new" / f"{mine}.json").write_text(json.dumps({
+        "message_id": mine, "author": "hermes-docker", "consumer": "hermes-mac",
+        "created_at": "2026-09-22T18:00:00Z", "task_type": "task_request", "kind": "task",
+        "schema": 1, "attempt": 0, "in_reply_to": None,
+        "payload": {"request": "Please do the thing that is mine.", "reply_expected": True}}))
+
+    other = "20260922T180100Z-bbbb0002"
+    (mailbox / "requests" / f"{other}.json").write_text(json.dumps({
+        "message_id": other, "author": "hermes-mac", "consumer": "hermes-docker",
+        "created_at": "2026-09-22T18:01:00Z", "task_type": "task_request", "kind": "task",
+        "schema": 1, "attempt": 0, "in_reply_to": None,
+        "payload": {"request": "their work, not ours", "reply_expected": True}}))
+    (mailbox / "state" / f"{other}.request.json").write_text(json.dumps({
+        "message_id": other, "status": "done", "parked_at": "2026-09-22T18:01:00Z",
+        "author": "hermes-mac", "consumer": "hermes-docker", "file": f"{other}.json",
+        "request": "their work, not ours", "closed_at": "2026-09-22T18:05:00Z"}))
+
+    run_ingest(env)
+    note = (vault / "Hermes/Mailbox Requests.md").read_text()
+    scope = [l for l in note.split("\n") if "Right now" in l]
+    check("the note states whose requests it lists", "addressed to this side" in note)
+    check("...carries the ask addressed to this side", mine in note)
+    check("...never lists the other side's request", other not in note)
+    check("...and reconciles both sides' counts",
+          "1 pending here" in note and "1 closed on the other side" in note, scope[0] if scope else "no Scope line")
+    lst = run_ingest(env, "--requests").stdout
+    check("--requests reports the other side separately", "on the other side" in lst)
+
+
 def test_link_escaping():
     banner("TEST 10 — a message payload can never create a vault link (payload link escaping)")
     mailbox, vault, home = new_fixture("t10-escape")
@@ -676,6 +716,7 @@ def main():
     test_handshake()
     test_requests()
     test_link_escaping()
+    test_request_note_scope()
     test_carding_optin()
 
     banner("SUMMARY")
