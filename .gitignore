@@ -1,0 +1,38 @@
+# OS / AppleDouble — this share produces ._ stubs and pathlib globs match them
+.DS_Store
+._*
+.AppleDouble
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Editor / temp
+*.swp
+*~
+
+# Verification + backup artifacts (the sync tooling writes .bak beside everything it touches)
+*.bak
+*.orig
+*.pre-*
+*.deploy-bak
+
+# Queue data must NEVER be committed. The live queue is /Volumes/appdata/hermes-Mac-Updates;
+# these names are ignored so a local fixture can never be committed by accident either.
+tmp/
+new/
+processing/
+processed/
+failed/
+Requests/
+state/
+recent-updates.json
+
+# Local-only config; config/ holds examples
+config/local/
+config/*.local.*
+.env

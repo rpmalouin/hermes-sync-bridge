@@ -1,0 +1,27 @@
+# Path templates. Copy to config/paths.local.yaml and edit — never commit the local copy.
+#
+# The same logical locations, as each host sees them. Keep this file honest: it is the quickest
+# way to answer "where does that actually live?" six months from now.
+
+mac:
+  queue:        /Volumes/appdata/hermes-Mac-Updates          # SMB mount of the DockerVM's share
+  vault:        /Volumes/Data/vault
+  board:        /Volumes/Data/vault/Hermes/Hermes Kanban.md
+  board_archive_dir: /Volumes/Data/vault/Hermes/05 Archive
+  logs:         /Volumes/Data/vault/Hermes/Hermes Logs/Mac
+  live_scripts: ~/.hermes/scripts
+  live_skill:   ~/.hermes/skills/homelab/hermes-mac-ingest
+  profile_skill: ~/.hermes/profiles/<profile>/skills/homelab/hermes-mac-ingest
+  repo:         <clone>
+
+dockervm:
+  queue:        /appdata/hermes-Mac-Updates                  # native path on that host
+  vault:        (write-on-request only; reached through its own Obsidian API)
+  scripts:      /root/.hermes/scripts
+  producer:     /appdata/hermes-Mac-Updates/generate.py
+
+# Identities used in the `author` / `consumer` envelope fields.
+consumers:
+  mac:    hermes-mac
+  docker: hermes-docker
+  any:    any
