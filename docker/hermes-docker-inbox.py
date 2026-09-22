@@ -17,6 +17,11 @@ What it does, per message in `new/` addressed to this consumer:
           state/<id>.request.json    for an ask, parked in requests/ (status: pending)
           state/<id>.attempt + back to new/ on a malformed envelope, failed/<f> + .reason
                                      after 3 attempts, matching the contract's lifecycle
+
+Parking follows the contract exactly: any `kind: task` message is parked rather than applied — with
+the one exemption it names, a `ping` (its apply is a no-op, so parking one invents a phantom ask and
+reports a null request). A `task_request` with no `request` text is malformed, not an ask: it takes
+the rejection path with a reason instead of parking.
   report  one stdout line per action (the cron job's output), and an append-only digest at
           ~/.hermes/state/hermes-docker-inbox.log so a later session can see what arrived
 
@@ -164,13 +169,23 @@ def apply_message(claimed: Path, message_id: str, message: dict, counted: dict,
     """Reject, park or archive one claimed message. Mutates `counted` and appends to `lines`."""
     author = message.get("author")
     task_type = message.get("task_type")
-    malformed = message.get("schema") != SCHEMA or task_type not in KNOWN_TASK_TYPES
+    payload = message.get("payload") or {}
+    request_text = str(payload.get("request") or "").strip()
+    # A `task_request` with no request text is not an ask anybody can serve (SCHEMA.md: `request` is
+    # the only mandatory payload field). It used to park and report "None" — a phantom pending ask.
+    malformed = (message.get("schema") != SCHEMA or task_type not in KNOWN_TASK_TYPES
+                 or (task_type == "task_request" and not request_text))
 
     if malformed:
         tries = attempt_count(message_id) + 1
         set_attempt(message_id, tries)
-        reason = ("schema is not 1" if message.get("schema") != SCHEMA
-                  else f"unknown task_type {task_type!r}")
+        if message.get("schema") != SCHEMA:
+            reason = "schema is not 1"
+        elif task_type not in KNOWN_TASK_TYPES:
+            reason = f"unknown task_type {task_type!r}"
+        else:
+            reason = ("task_request without a 'request' text (SCHEMA.md: request is the only "
+                      "mandatory payload field)")
         write_json(STATE / f"{message_id}.status",
                    {"phase": "rejected", "attempts": tries, "last_reason": reason,
                     "author": author, "at": stamp()})
@@ -189,10 +204,11 @@ def apply_message(claimed: Path, message_id: str, message: dict, counted: dict,
             digest(f"REQUEUE {message_id} from {author}: {reason} (attempts={tries})")
         return
 
-    payload = message.get("payload") or {}
     in_reply_to = message.get("in_reply_to")
 
-    if task_type == "task_request" or message.get("kind") == "task":
+    # Parking rule, with the contract's one exemption: a `ping` is never parked, whatever its `kind`
+    # says — its apply is a no-op (SCHEMA.md). Parking one produced a phantom ask with a null request.
+    if task_type == "task_request" or (message.get("kind") == "task" and task_type != "ping"):
         parked = REQUESTS / claimed.name
         os.rename(claimed, parked)
         write_json(STATE / f"{message_id}.request.json", {
@@ -206,8 +222,10 @@ def apply_message(claimed: Path, message_id: str, message: dict, counted: dict,
         })
         counted["parked"] += 1
         counted["needs_action"] += 1
-        lines.append(f"NEEDS ACTION {message_id} from {author}: {payload.get('request')}")
-        digest(f"PARKED {message_id} from {author}: {payload.get('request')} "
+        ask = (payload.get("request") or payload.get("summary") or payload.get("note")
+               or "(no request text — read the payload)")
+        lines.append(f"NEEDS ACTION {message_id} from {author}: {ask}")
+        digest(f"PARKED {message_id} from {author}: {ask} "
                f"[acceptance: {payload.get('acceptance')}]")
         return
 
