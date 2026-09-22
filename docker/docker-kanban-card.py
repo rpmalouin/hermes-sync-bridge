@@ -71,8 +71,17 @@ def mcp(tool: str, arguments: dict) -> dict:
 
 
 def read_board() -> tuple[str, str]:
-    note = mcp("get_note", {"slug": SLUG, "vault_id": VAULT_ID})["note"]
-    return note["content"], note["content_hash"]
+    note = mcp("get_note", {"slug": SLUG, "vault_id": VAULT_ID})
+    if "note" not in note:
+        # Hatchdoor answers with a structured refusal instead of a note when the vault is
+        # unreachable (e.g. its SMB share is down: vault_read_unavailable / "Host is down"). Say
+        # that plainly — a KeyError traceback reads like a broken tool rather than a missing vault,
+        # and this is exactly what a card-first session hits at Step 0.
+        message = note.get("message") or note.get("code") or json.dumps(note)[:200]
+        die(f"cannot read the board: {message}\n"
+            f"       The vault is unreachable, so no card can be opened right now. That is a blocked "
+            f"Step 0, not a skipped one: record the attempt and card the work when the vault is back.")
+    return note["note"]["content"], note["note"]["content_hash"]
 
 
 def write_board(old: str, new: str, summary: str) -> str:
