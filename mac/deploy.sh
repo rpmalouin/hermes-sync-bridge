@@ -103,5 +103,29 @@ while IFS='|' read -r src dst; do
   echo "   installed $(show "$dst")"
 done < <(pairs)
 
+# ---- verify: byte-identical, and the installed copies still RUN ---------------------------
+# Borrowed from the DockerVM's deploy.sh after their push: they verify by executing the installed
+# consumer with --dry-run, which catches what a compile cannot — an import that resolves only in
+# the repo, a stale bytecode path, a script that starts and dies. Writes nothing.
+while IFS='|' read -r src dst; do
+  [ "$(sha "$src")" = "$(sha "$dst")" ] || { echo "   verify failed: $(show "$dst")" >&2; false; }
+done < <(pairs)
+
+consumer="$TARGET_HOME/.hermes/skills/homelab/hermes-mac-ingest/scripts/ingest.py"
+if [ -f "$consumer" ]; then
+  python3 "$consumer" --dry-run >/dev/null \
+    || { echo "   verify failed: the installed consumer refuses to run" >&2; false; }
+  echo "   verify: installed consumer runs (--dry-run, no writes)"
+fi
+
+board_tool="$TARGET_HOME/.hermes/scripts/kanban-card.py"
+if [ -f "$board_tool" ]; then
+  # `list` (read-only), deliberately not `check`: check's exit code reports the *board's* state, not
+  # the install, and a deploy must not roll back because another writer is mid-edit.
+  python3 "$board_tool" list >/dev/null \
+    || { echo "   verify failed: the installed board tool refuses to run" >&2; false; }
+  echo "   verify: installed board tool runs (list, read-only)"
+fi
+
 trap - ERR
 echo "== live loops keep running; nothing was moved, nothing under /Volumes/Data is a cron target =="

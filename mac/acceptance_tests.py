@@ -671,6 +671,37 @@ def test_request_note_scope():
     check("--requests reports the other side separately", "on the other side" in lst)
 
 
+def test_publish_drops_stub():
+    banner("TEST 13 — a publish cleans up its own AppleDouble stub")
+    # macOS writes `._<name>` beside every file it puts on an SMB share, and rename() does not carry
+    # the stub along, so one is left in tmp/ and one can appear beside the published file. A stub in
+    # new/ raised UnicodeDecodeError in the DockerVM's consumer on 2026-09-22 and killed its run,
+    # leaving the mail behind it unseen for three minutes. Their side now skips such files; this side
+    # stops creating them, which is why publish() calls drop_stub() on both paths.
+    import importlib.util
+    mailbox, vault, home = new_fixture("t13-stub")
+    env = env_for(mailbox, vault, home)
+    run_ingest(env, "--provision")
+
+    spec = importlib.util.spec_from_file_location("ingest_under_test", Path(__file__).resolve().parent / "ingest.py")
+    assert spec and spec.loader, "cannot load ingest.py for the in-process publish test"
+    ing = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ing)
+
+    envelope = ing.make_envelope({"dev_item": "stub-test", "change_type": "modified", "summary": "stub case"},
+                                 "hermes-mac", "dev_update")
+    name = f"{envelope['message_id']}.json"
+    tmp, dst = mailbox / "tmp" / name, mailbox / "new" / name
+    tmp.write_text("{}")                                    # what the publisher would have written
+    (tmp.parent / f"._{name}").write_text("stub")            # its sidecar, as the OS leaves it in tmp/
+    (dst.parent / f"._{name}").write_text("stub")            # and one beside the destination
+    ing.publish(mailbox, envelope)
+
+    check("the message was published", dst.exists())
+    check("no stub left in tmp/", not (tmp.parent / f"._{name}").exists())
+    check("no stub left beside the published message", not (dst.parent / f"._{name}").exists())
+
+
 def test_link_escaping():
     banner("TEST 10 — a message payload can never create a vault link (payload link escaping)")
     mailbox, vault, home = new_fixture("t10-escape")
@@ -717,6 +748,7 @@ def main():
     test_requests()
     test_link_escaping()
     test_request_note_scope()
+    test_publish_drops_stub()
     test_carding_optin()
 
     banner("SUMMARY")

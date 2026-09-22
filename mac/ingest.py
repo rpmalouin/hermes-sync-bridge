@@ -500,6 +500,14 @@ def publish(root: Path, envelope: dict) -> Path:
         fh.flush()
         os.fsync(fh.fileno())
     os.rename(tmp, dst)
+    # macOS creates an AppleDouble `._<name>` stub beside every file it puts on an SMB share, and a
+    # POSIX rename does not carry the stub along — so one is left behind in tmp/ and one can appear
+    # beside the published file. Inside the queue they are litter, but not harmless litter: on
+    # 2026-09-22 a stub in new/ raised UnicodeDecodeError in the *other* host's consumer and killed
+    # its run, leaving the mail queued behind it unseen for three minutes. Ours, so it is cleaned
+    # without being counted (same rule as the state file).
+    drop_stub(tmp)
+    drop_stub(dst)
     return dst
 
 
