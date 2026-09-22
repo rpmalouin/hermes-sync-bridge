@@ -14,6 +14,7 @@
 #   docker/hermes-docker-inbox.py         -> $HOME/.hermes/scripts/hermes-docker-inbox.py
 #   docker/hermes-docker-inbox-cron.sh    -> $HOME/.hermes/scripts/hermes-docker-inbox-cron.sh
 #   docker/hermes-docker-request-close.py -> $HOME/.hermes/scripts/hermes-docker-request-close.py
+#   docker/docker-kanban-card.py          -> $HOME/.hermes/scripts/docker-kanban-card.py
 #   docker/generate.py                    -> $QUEUE_DIR/generate.py  (the queue itself: the
 #                                            contract says this script lives in the queue)
 #
@@ -47,7 +48,7 @@ if [ ! -d "$QUEUE_DIR" ]; then
   exit 1
 fi
 for f in hermes-docker-inbox.py hermes-docker-inbox-cron.sh hermes-docker-request-close.py \
-         generate.py; do
+         docker-kanban-card.py generate.py; do
   if [ ! -f "$REPO/docker/$f" ]; then
     echo "FATAL: $REPO/docker/$f is missing — the repo is incomplete, refuse to guess." >&2
     exit 1
@@ -58,6 +59,7 @@ pairs() {
   echo "$REPO/docker/hermes-docker-inbox.py|$SCRIPTS/hermes-docker-inbox.py"
   echo "$REPO/docker/hermes-docker-inbox-cron.sh|$SCRIPTS/hermes-docker-inbox-cron.sh"
   echo "$REPO/docker/hermes-docker-request-close.py|$SCRIPTS/hermes-docker-request-close.py"
+  echo "$REPO/docker/docker-kanban-card.py|$SCRIPTS/docker-kanban-card.py"
   echo "$REPO/docker/generate.py|$QUEUE_DIR/generate.py"
 }
 
@@ -83,7 +85,7 @@ fi
 # ---- gates on the code itself, before anything is installed ---------------------------------
 pycache="$(mktemp -d)"
 echo "gates:"
-for f in hermes-docker-inbox.py hermes-docker-request-close.py generate.py; do
+for f in hermes-docker-inbox.py hermes-docker-request-close.py docker-kanban-card.py generate.py; do
   PYTHONPYCACHEPREFIX="$pycache" python3 -m py_compile "$REPO/docker/$f"
   echo "  compiles  docker/$f"
 done
@@ -126,7 +128,7 @@ done < <(pairs)
 while IFS='|' read -r src dst; do
   [ "$(sha "$src")" = "$(sha "$dst")" ] || { echo "verify failed: $(show "$dst")" >&2; false; }
 done < <(pairs)
-echo "verify: all four files byte-identical to the repo"
+echo "verify: every file byte-identical to the repo"
 
 python3 "$SCRIPTS/hermes-docker-inbox.py" --dry-run >/dev/null \
   || { echo "verify failed: the installed consumer refuses to run" >&2; false; }

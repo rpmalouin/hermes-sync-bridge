@@ -15,16 +15,31 @@ Run `./docker/deploy.sh --check` to see drift between this directory and what ac
 | `hermes-docker-inbox.py` | `~/.hermes/scripts/hermes-docker-inbox.py` | the VM's inbox consumer — claims `hermes-docker`/`any`, parks asks, never touches the vault |
 | `hermes-docker-inbox-cron.sh` | `~/.hermes/scripts/hermes-docker-inbox-cron.sh` | the wrapper cron `cron-job-id` calls every minute |
 | `hermes-docker-request-close.py` | `~/.hermes/scripts/hermes-docker-request-close.py` | closes a parked ask and publishes the contract's receipt |
-| `deploy.sh` | — | installs the four rows above; `--check`, `--dry-run` |
+| `docker-kanban-card.py` | `~/.hermes/scripts/docker-kanban-card.py` | `open` / `done` / `list` / `check` — cards our work in the shared Kanban with the plugin's exact shape, a count tripwire and hash-guarded edits |
+| `deploy.sh` | — | installs the rows above; `--check`, `--dry-run` |
 
 ## How a change lands here
 
+0. **Card it first — before you touch anything.** `docker-kanban-card.py open "<title>"` opens the
+   card in `Hermes-dockerVM (Active)` (`Status: active`, box **unchecked**, `Context` linked to a
+   dated note in `Hermes/Hermes Logs/dockerVM/`) and then send the transition as a `dev_update`
+   (`modified`) so movement is heard rather than discovered. the operator reads the board as the record of
+   what is *happening*; a card that arrives after the work describes nothing. This step is not
+   advice: on 2026-09-22 sixteen minutes of real work — three scripts, a deploy step and a consumer
+   crash fix — ran against an empty column because the rule lived in a session's memory.
 1. Edit the file in this directory (never the live copy — `deploy.sh --check` will call it drift).
 2. `./docker/deploy.sh --dry-run`, then `./docker/deploy.sh`. The gates compile every script and
    parse the wrapper; the install is per-file and atomic; the verify step re-checks byte equality
    and runs the installed consumer with `--dry-run` (which writes nothing); any failure rolls the
    backups back.
-3. Commit and push. The Mac side reads this directory for history and review.
+3. **Close the card when it lands.** `docker-kanban-card.py done "<title substring>" --summary
+   "<what shipped>"` flips the box to `- [x]`, sets `Status: done` and moves the card to `Done`;
+   append the same summary to the log note, then send the second `dev_update`. A card opened after
+   the fact says so in its `Notes` — practice, not confession.
+4. Commit and push. The Mac side reads this directory for history and review.
+
+The same discipline is written into the `hermes-activity-kanban` skill on this host, where a session
+finds it when the work starts rather than when the work is over.
 
 ## What the consumer had to learn the hard way (2026-09-22)
 
