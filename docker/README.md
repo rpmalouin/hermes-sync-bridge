@@ -1,33 +1,40 @@
 # docker/ — the DockerVM's scripts
 
-**Owner: the DockerVM.** The Mac keeps this directory in sync for history and review; the VM
-commits changes to its own scripts here. See "one pen per file" in the top-level README.
+**Owner: the DockerVM, and the clone is the source.** Decided 2026-09-22 in answer to the ask on
+the queue: this host *adopts* the repo for its own scripts. Edit here, install with
+`docker/deploy.sh`, commit. The live paths do not move (`~/.hermes/scripts/`, the queue's own
+`generate.py`) because a 1-minute cron whose entry point lives behind a clone would stop consuming
+silently — so deploy installs copies: tested first, one file at a time, atomically, with rollback.
+Run `./docker/deploy.sh --check` to see drift between this directory and what actually runs.
 
 ## What is here
 
-| file | status |
-|---|---|
-| `generate.py` | the producer, copied byte-identical from the live share (`/appdata/hermes-Mac-Updates/generate.py`) on 2026-09-22 |
+| file | live path | status |
+|---|---|---|
+| `generate.py` | `/appdata/hermes-Mac-Updates/generate.py` | the producer; lives in the queue by contract, do not move it |
+| `hermes-docker-inbox.py` | `~/.hermes/scripts/hermes-docker-inbox.py` | the VM's inbox consumer — claims `hermes-docker`/`any`, parks asks, never touches the vault |
+| `hermes-docker-inbox-cron.sh` | `~/.hermes/scripts/hermes-docker-inbox-cron.sh` | the wrapper cron `cron-job-id` calls every minute |
+| `hermes-docker-request-close.py` | `~/.hermes/scripts/hermes-docker-request-close.py` | closes a parked ask and publishes the contract's receipt |
+| `deploy.sh` | — | installs the four rows above; `--check`, `--dry-run` |
 
-## What is not here yet, and why
+## How a change lands here
 
-The VM's other scripts run from `root@dockervm:/root/.hermes/scripts/` and were not readable from
-the Mac when this repo was created:
+1. Edit the file in this directory (never the live copy — `deploy.sh --check` will call it drift).
+2. `./docker/deploy.sh --dry-run`, then `./docker/deploy.sh`. The gates compile every script and
+   parse the wrapper; the install is per-file and atomic; the verify step re-checks byte equality
+   and runs the installed consumer with `--dry-run` (which writes nothing); any failure rolls the
+   backups back.
+3. Commit and push. The Mac side reads this directory for history and review.
 
-- `hermes-docker-inbox.py` — its inbox consumer (claims `hermes-docker` mail, parks asks, never
-  touches the vault)
-- `hermes-docker-inbox-cron.sh` — the wrapper its 1-minute job calls
-- `hermes-docker-request-close.py` — closes a parked ask and publishes the contract's receipt
+## What the consumer had to learn the hard way (2026-09-22)
 
-They belong in this directory. The ask sent over the queue
-(`task_request`, 2026-09-22) is what decides the model:
-
-- **adopt the clone as the source** — the VM clones this repo, edits here, and installs into its own
-  live paths the same way `mac/deploy.sh` does on this side; or
-- **keep this a read-only mirror** — the VM's live scripts stay authoritative, and `docker/` is
-  updated by hand when something changes.
-
-Either way, do not change a script that runs on their host from here. Their host, their pen.
+- A macOS `._<name>.json` AppleDouble sidecar matches `*.json` and is **not a message**. Parsing one
+  as UTF-8 killed a whole run and cost the real mail queued behind it. It is now counted as a stray
+  and skipped, never read.
+- One unreadable message must never end the run: it is skipped visibly, or handed back to `new/` if
+  it was already claimed. The consumer's own stale claims are reaped back to `new/` after 15 minutes
+  at the start of every run, because a consumer that only globs `new/` would otherwise never see
+  mail stranded by a crash.
 
 ## Producer expectations worth preserving
 
@@ -38,3 +45,6 @@ Either way, do not change a script that runs on their host from here. Their host
 - Asks go out as `task_request` only. A `dev_update` is a notification about work already done —
   an ask smuggled into one gets logged and closed by the loop with nobody acting on it.
 - Never mutate a published body; attempts live in `state/<message_id>.attempt`.
+- Carding is opt-in: `--card` sets `payload.card = true` for a `dev_update`. Without it the consumer
+  logs and cards nothing; with it, `dev_item` must equal the card's title / `**Task:**` text or a
+  second card is created. This host writes its own cards, so `--card` is the fallback.
