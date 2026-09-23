@@ -48,7 +48,11 @@ show() { echo "${1/#$TARGET_HOME/~}"; }
 if [ "$CHECK" = 1 ]; then
   drift=0
   while IFS='|' read -r src dst; do
-    if [ ! -f "$dst" ]; then
+    if [ ! -d "$(dirname "$dst")" ]; then
+      # same rule as the install loop: a destination whose directory is not on this host is not
+      # drift, it is a target this machine does not have (e.g. a profile that was removed).
+      echo "n/a      $(show "$dst")   (no such directory on this host)"
+    elif [ ! -f "$dst" ]; then
       echo "MISSING  $(show "$dst")"; drift=1
     elif [ "$(sha "$src")" = "$(sha "$dst")" ]; then
       echo "in sync  $(show "$dst")"
@@ -108,6 +112,9 @@ done < <(pairs)
 # consumer with --dry-run, which catches what a compile cannot — an import that resolves only in
 # the repo, a stale bytecode path, a script that starts and dies. Writes nothing.
 while IFS='|' read -r src dst; do
+  # the install loop above SKIPS a destination whose directory is absent; this loop must skip the
+  # same ones or it shas a file that was never installed, fails, and rolls the whole deploy back.
+  [ -d "$(dirname "$dst")" ] || continue
   [ "$(sha "$src")" = "$(sha "$dst")" ] || { echo "   verify failed: $(show "$dst")" >&2; false; }
 done < <(pairs)
 
