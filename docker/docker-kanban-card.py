@@ -204,12 +204,17 @@ def open_card(args) -> int:
     if any(args.title.lower() in card_title(b).lower() for _, b in before):
         die(f"a card matching {args.title!r} already exists — nothing opened, nothing changed")
     note = args.note or f"{LOG_DIR}/{today()} {args.title}"
-    notes = [f"Opened {today()} **{now_stamp()} as Step 0**, before the first action on this task."]
+    if args.done:
+        notes = [f"Carded 2026-09-23 **{now_stamp()}**, after the work landed — say why in --notes."]
+    else:
+        notes = [f"Opened {today()} **{now_stamp()} as Step 0**, before the first action on this task."]
     notes += args.notes or []
-    block = render_card(args.title, "active", False, NODE_ME, f"[[{note}]]", notes)
+    block = render_card(args.title, "done" if args.done else "active", bool(args.done),
+                        args.node, f"[[{note}]]", notes)
 
     regions = split_regions(content)
-    target = region_by_column(regions, ACTIVE)
+    column = DONE if args.done else ACTIVE
+    target = region_by_column(regions, column)
     blocks, trailer = parse_region(content, target)
     new_region = render_region(target["header"], [block] + blocks, trailer)
 
@@ -218,14 +223,16 @@ def open_card(args) -> int:
     new_content = content[:target["start"]] + new_span + content[target["end"]:]
 
     if args.dry_run:
-        print(f"[dry-run] card to open in '{ACTIVE}':\n" + "\n".join(block))
+        print(f"[dry-run] card to add to '{column}':\n" + "\n".join(block))
         print(f"[dry-run] region rewritten ({len(old_span)} -> {len(new_span)} chars), "
               f"cards before={len(before)}, after={len(all_cards(new_content))}")
         return 0
 
     if len(all_cards(new_content)) != len(before) + 1:
         die("refused: the rendered board does not have exactly one more card than before")
-    write_board(old_span, new_span, f"Kanban: open card '{args.title}' (Step 0)")
+    write_board(old_span, new_span,
+                f"Kanban: add card '{args.title}' to {column} "
+                f"({'retroactive, done' if args.done else 'Step 0, in flight'})")
 
     after_content, _ = read_board()
     after = all_cards(after_content)
@@ -234,9 +241,12 @@ def open_card(args) -> int:
     mine = [b for col, b in after if card_title(b).lower() == args.title.lower()]
     if len(mine) != 1:
         die(f"verify failed: expected exactly one card titled {args.title!r}, found {len(mine)}", 2)
-    if card_field(mine[0], "Status").lower() != "active" or CARD_RE.match(mine[0][0]).group(1) != " ":
-        die("verify failed: the new card is not active+unchecked", 2)
-    print(f"opened in {ACTIVE}: {args.title}")
+    want_status = "done" if args.done else "active"
+    want_box = "x" if args.done else " "
+    if (card_field(mine[0], "Status").lower() != want_status
+            or CARD_RE.match(mine[0][0]).group(1).lower() != want_box):
+        die(f"verify failed: the new card is not {want_status} with box [{want_box}]", 2)
+    print(f"added to {column}: {args.title}")
     print(f"  cards {len(before)} -> {len(after)}, Context [[{note}]]")
     return 0
 
@@ -366,6 +376,11 @@ def main() -> int:
     p_open.add_argument("title")
     p_open.add_argument("--note", default=None, help="vault path of the log note for Context")
     p_open.add_argument("--notes", action="append", default=[], help="extra Notes line(s)")
+    p_open.add_argument("--node", default=NODE_ME, choices=[NODE_ME, "Mac", "Mac + dockerVM"],
+                        help="Node attribution: dockerVM (default), Mac, or the joint form")
+    p_open.add_argument("--done", action="store_true",
+                        help="retroactive card: write it straight into Done, box checked, "
+                             "Status done (for work that finished before it could be carded)")
     p_open.add_argument("--dry-run", action="store_true")
     p_open.set_defaults(func=open_card)
 
