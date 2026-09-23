@@ -788,6 +788,9 @@ def test_kanban_archive_filing():
     check("a second section for a date that already had one is MERGED, not duplicated",
           heads(nt).count("2026-09-22") == 1 and "Archived card A" in nt and "An older card" in nt,
           str(heads(nt)))
+    check("cards merged into an EXISTING date section are PREPENDED (newest pass on top)",
+          nt.index("Archived card A") < nt.index("An older card"),
+          "the 2026-09-22 section must read: Archived card A, then An older card")
     check("the plugin's archive stamp is stripped from the filed card",
           "**Status:** done — 2026-09-22" not in nt)
     check("the note's existing prose header survived the rewrite", "Prose here." in nt)
@@ -815,6 +818,11 @@ def test_kanban_archive_filing():
           "## Archive" in bt and "Still staged" in bt)
     check("...with its `***` and exactly one of them",
           bt.count("***") == 1 and re.search(r"\*\*\*\s*\n\s*## Archive", bt) is not None)
+
+    nt = note.read_text()
+    check("a LATER pass files above the earlier cards of the same date",
+          nt.index("A later card") < nt.index("Done card one"),
+          "today's section must lead with the card the later pass filed")
 
 
 def main():

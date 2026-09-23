@@ -39,6 +39,7 @@ pairs() {
   echo "$REPO/mac/acceptance_tests.py|$sk2/scripts/acceptance_tests.py"
   echo "$REPO/mac/kanban-card.py|$TARGET_HOME/.hermes/scripts/kanban-card.py"
   echo "$REPO/mac/kanban-archive-roll.py|$TARGET_HOME/.hermes/scripts/kanban-archive-roll.py"
+  echo "$REPO/mac/kanban-archive-roll-cron.sh|$TARGET_HOME/.hermes/scripts/kanban-archive-roll-cron.sh"
 }
 
 sha() { shasum -a 256 "$1" | awk '{print $1}'; }

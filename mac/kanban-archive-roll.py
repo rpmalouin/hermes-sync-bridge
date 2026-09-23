@@ -30,12 +30,16 @@ Division of labour (the operator's policy, 2026-09-22):
   * the operator deletes these notes whenever he likes. A missing note is never an error: the next roll
     recreates it, so a deletion is a deliberate prune rather than a breakage.
   * **newest first** (the operator, 2026-09-23): sections are emitted newest-date-first with `## Archived
-    undated` last. He reads the note top-down and expects the cards he has just filed to be at the
-    top; appending them under older sections buries them. Cards arriving for a date whose section
-    already exists are appended INTO that section rather than starting a second heading with the
-    same name — two passes on one day used to produce two `## Archived <same date>` headings.
-    Re-emission re-sorts the note, so a note built by an older version (which appended) becomes
-    newest-first on the first run of this one; the script says so when it happens.
+    undated` last, and a card arriving for a date whose section already exists is PREPENDED to that
+    section. The rule reads at both levels — the newest date first, and within a date the newest
+    arrival first — because he reads the note top-down and expects the cards he has just filed to be
+    at the top. Merging into the existing heading rather than starting a second one is deliberate:
+    two passes on one day used to produce two `## Archived <same date>` headings. Within one pass the
+    source's own order is kept, and for `Done` that order is already newest-first because the board
+    tool inserts a moved card at the TOP of its column. Re-emission re-sorts the note, so a note
+    built by an older version (which appended) becomes newest-first on the first run of this one; the
+    script says so when it happens. Known limit: cards ALREADY inside a date section are not
+    re-sorted — the note records no arrival order for them — so only new arrivals are placed.
 
 The plugin writes no archive section at all when it is empty, so a fully-rolled board returns to the
 plugin's canonical shape — that is why the `***` + `## Archive` block is removed, not emptied. The
@@ -302,8 +306,12 @@ def main() -> int:
             incoming = []
             for it in rows:
                 incoming += it["block"] + [""]
-            if date in merged:                      # same date already has a section: extend it
-                merged[date] = trim(merged[date]) + [""] + trim(incoming)
+            if date in merged:
+                # same date already has a section: PREPEND, so the cards filed by the latest pass
+                # sit at the top of their date's section (and the heading is never duplicated).
+                # the operator's rule reads at both levels: the newest date first, and within a date the
+                # newest arrival first.
+                merged[date] = trim(incoming) + [""] + trim(merged[date])
             else:
                 merged[date] = trim(incoming)
             added += len(rows)
