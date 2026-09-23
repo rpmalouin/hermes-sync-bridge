@@ -84,7 +84,9 @@ rollback() {
   for dst in "${installed[@]}"; do
     if [ -f "$dst.deploy-bak" ]; then cp -p "$dst.deploy-bak" "$dst"; echo "   rolled back $(show "$dst")" >&2; fi
   done
-  rm -f "$REPO"/mac/*.new-$$ 2>/dev/null || true
+  # The staging temp lives BESIDE THE DESTINATION — that is what makes the rename atomic — so
+  # cleaning a repo path left a `.name.new-$$` file behind in the live directory on every failure.
+  while IFS='|' read -r _src _dst; do rm -f "$(dirname "$_dst")/.$(basename "$_dst").new-$$"; done < <(pairs)
   exit "$rc"
 }
 trap rollback ERR
@@ -98,7 +100,13 @@ while IFS='|' read -r src dst; do
   fi
   tmp="$dir/.$(basename "$dst").new-$$"
   cp -p "$src" "$tmp"
-  python3 -m py_compile "$tmp"
+  # syntax-check BY TYPE: this loop installs more than Python (the board tooling now includes a
+  # shell entry point for cron), and py_compile on a shell script raises SyntaxError, which takes
+  # the whole deploy down with it — every target rolled back, gates having passed.
+  case "$src" in
+    *.py) python3 -m py_compile "$tmp" ;;
+    *.sh) bash -n "$tmp" ;;
+  esac
   [ -f "$dst" ] && cp -p "$dst" "$dst.deploy-bak"
   # BSD chmod has no --reference; copy the mode explicitly (falls back to 755)
   chmod "$(stat -f '%Lp' "$dst" 2>/dev/null || echo 755)" "$tmp"
