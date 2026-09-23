@@ -53,7 +53,26 @@ def write_json(path: Path, doc: dict) -> None:
 
 
 def parked_requests() -> list[Path]:
-    return sorted(p for p in REQUESTS.glob("*.json") if not p.name.startswith("._"))
+    """Parked mail, filtered to this consumer's own asks.
+
+    `requests/` is a SHARED namespace: the Mac side parks the asks it receives in the very same
+    directory, so counting its mail as ours invents pending work for this host (the mirror of the
+    bug they fixed on their side, where our parked asks read as their unactioned items). The
+    parked message's OWN `consumer` field decides, not the directory. An unreadable file counts as
+    ours: hiding an ask is worse than double-showing one.
+    """
+    mine = []
+    for path in sorted(REQUESTS.glob("*.json")):
+        if path.name.startswith("._"):
+            continue
+        try:
+            message = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            mine.append(path)
+            continue
+        if message.get("consumer") in CLAIMABLE:
+            mine.append(path)
+    return mine
 
 
 def main() -> int:
