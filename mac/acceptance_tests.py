@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Acceptance tests for the Hermes-Mac mailbox consumer (ingest.py).
+"""Acceptance tests for the Hermes-Mac side of the bridge: the mailbox consumer (ingest.py) and the
+board tooling it shares with the vault (kanban-card.py / kanban-archive-roll.py).
 
 Builds throwaway sandboxes under /tmp/mailbox-acceptance, one per test, each with
 its own mailbox and its own copy of the real Kanban board, so nothing here can
@@ -727,6 +728,95 @@ def test_link_escaping():
     check("the summary line is escaped as well", "`[[wikilink]]`" in body.split("**Summary:**")[1][:200])
 
 
+def test_kanban_archive_filing():
+    banner("TEST 14 — filing finished cards: ticked Done + the plugin's archive, newest-first")
+    _mailbox, vault, _home = new_fixture("t14-filing")
+    board_path = vault / "Hermes/Hermes Kanban.md"
+    arch = vault / "Hermes/05 Archive"
+    arch.mkdir(parents=True, exist_ok=True)
+    t = "\t"
+    board_path.write_text(
+        "---\n\nkanban-plugin: board\ntags:\n  - kanban\ncard_template: |\n  Task:\n  Node:\n\n---\n\n"
+        "## Backlog\n\n- [ ] A backlog card\n\n\n"
+        "## Hermes-Mac (Active)\n\n- [ ] An active card\n\n\n"
+        "## Done\n\n"
+        f"- [x] Done card one\n{t}- **Task:** Done card one\n{t}- **Status:** done\n\n"
+        f"- [x] Done card two\n{t}- **Task:** Done card two\n{t}- **Status:** done\n\n"
+        f"- [ ] Done but unticked\n{t}- **Task:** Done but unticked\n{t}- **Status:** done\n\n\n"
+        "***\n\n## Archive\n\n"
+        f"- [x] Archived card A\n{t}- **Task:** Archived card A\n{t}- **Status:** done — 2026-09-22\n\n"
+        '%% kanban:settings\n```\n{"kanban-plugin":"board","archive-with-date":true}\n```\n%%')
+    note = arch / "Hermes Kanban Archive 2026.md"
+    note.write_text(
+        "---\ntags:\n  - archive\n---\n\n# 🗄️ Hermes Kanban Archive 2026\n\nProse here.\n\n"
+        "← [[Hermes/Hermes|Home]]\n\n"
+        f"## Archived 2026-09-22\n\n- [x] An older card\n{t}- **Task:** An older card\n{t}- **Status:** done\n")
+
+    roll = HERE / "kanban-archive-roll.py"
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    def run_roll(*args):
+        p = subprocess.run([PY, str(roll), "--vault", str(vault), *args], capture_output=True, text=True)
+        print(f"  $ kanban-archive-roll.py {' '.join(args)}  -> rc={p.returncode}")
+        for line in p.stdout.strip().splitlines():
+            print(f"      {line}")
+        return p
+
+    def cards(text):
+        return [x.group(1) for x in re.finditer(r"^[ \t]*- \[[ x]\][ \t]*(.*\S)?[ \t]*$", text, re.M)]
+
+    def heads(text):
+        return [m.group(1).strip() for m in re.finditer(r"^## Archived (.+?)\s*$", text, re.M)]
+
+    before_board = board_path.read_text()
+    p = run_roll("--dry-run")
+    check("dry run reports the pass and writes nothing",
+          p.returncode == 0 and "nothing written" in p.stdout
+          and board_path.read_text() == before_board)
+    p = run_roll()
+    bt, nt = board_path.read_text(), note.read_text()
+    check("rc=0", p.returncode == 0, str(p.returncode))
+    check("board loses exactly the 3 finished cards, nothing else",
+          len(cards(before_board)) - len(cards(bt)) == 3, f"{len(cards(before_board))} -> {len(cards(bt))}")
+    check("an UNticked card in Done is left where it is", "Done but unticked" in bt)
+    check("the empty Done column reads as the plugin expects", "## Done" in bt)
+    check("the archive section and its `***` are gone from the board",
+          "## Archive" not in bt and bt.count("***") == 0)
+    check("kanban:settings survives the rebuild", '%% kanban:settings' in bt)
+    check("the note is newest-first, with today's cards on top",
+          heads(nt)[0] == today and nt.index(today) < nt.index("## Archived 2026-09-22"), str(heads(nt)))
+    check("a second section for a date that already had one is MERGED, not duplicated",
+          heads(nt).count("2026-09-22") == 1 and "Archived card A" in nt and "An older card" in nt,
+          str(heads(nt)))
+    check("the plugin's archive stamp is stripped from the filed card",
+          "**Status:** done — 2026-09-22" not in nt)
+    check("the note's existing prose header survived the rewrite", "Prose here." in nt)
+    check("backs the board up before writing", (vault / "Hermes/Hermes Kanban.md.bak").exists())
+
+    b0, n0 = bt, nt
+    p = run_roll()
+    check("a re-run is a no-op: rc=0, reports nothing to file",
+          p.returncode == 0 and "nothing to file" in p.stdout)
+    check("...and leaves both files byte-identical",
+          board_path.read_text() == b0 and note.read_text() == n0)
+
+    # a done-only pass must NOT touch the archive section: the plugin's parser needs the `***`
+    # and the `## Archive` heading to appear together.
+    board_path.write_text(
+        "---\n\nkanban-plugin: board\n\n---\n\n## Done\n\n"
+        f"- [x] A later card\n{t}- **Task:** A later card\n{t}- **Status:** done\n\n\n"
+        "***\n\n## Archive\n\n"
+        f"- [x] Still staged\n{t}- **Task:** Still staged\n{t}- **Status:** done — 2026-09-22\n\n"
+        '%% kanban:settings\n```\n{"kanban-plugin":"board"}\n```\n%%')
+    run_roll("--source", "done")
+    bt = board_path.read_text()
+    check("--source done files the Done card", "A later card" not in bt)
+    check("--source done leaves a staged archive section intact",
+          "## Archive" in bt and "Still staged" in bt)
+    check("...with its `***` and exactly one of them",
+          bt.count("***") == 1 and re.search(r"\*\*\*\s*\n\s*## Archive", bt) is not None)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--verbose", action="store_true")
@@ -750,6 +840,7 @@ def main():
     test_request_note_scope()
     test_publish_drops_stub()
     test_carding_optin()
+    test_kanban_archive_filing()
 
     banner("SUMMARY")
     passed = sum(1 for _l, ok, _d in RESULTS if ok)
