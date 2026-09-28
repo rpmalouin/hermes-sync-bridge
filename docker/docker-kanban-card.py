@@ -205,7 +205,7 @@ def open_card(args) -> int:
         die(f"a card matching {args.title!r} already exists — nothing opened, nothing changed")
     note = args.note or f"{LOG_DIR}/{today()} {args.title}"
     if args.done:
-        notes = [f"Carded 2026-09-23 **{now_stamp()}**, after the work landed — say why in --notes."]
+        notes = [f"Carded {today()} **{now_stamp()}**, after the work landed — say why in --notes."]
     else:
         notes = [f"Opened {today()} **{now_stamp()} as Step 0**, before the first action on this task."]
     notes += args.notes or []
