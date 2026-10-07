@@ -15,7 +15,9 @@ turns it into a command, and the command refuses to guess:
 
 Commands:
     docker-kanban-card.py open "<title>" [--note "<vault path>"] [--notes "<line>"]... [--dry-run]
+    docker-kanban-card.py open --backlog "<title>" [...]     # note it in Backlog, not started
     docker-kanban-card.py done "<title substring>" [--summary "<completion line>"] [--dry-run]
+    docker-kanban-card.py backlog "<title substring>" [--summary "<why it is parked>"] [--dry-run]
     docker-kanban-card.py list
     docker-kanban-card.py check
 
@@ -37,6 +39,12 @@ SLUG = "hermes-kanban"
 HELPER = "/root/.hermes/scripts/hatchdoor-mcp-call.py"
 ACTIVE = "Hermes-dockerVM (Active)"
 DONE = "Done"
+# Backlog is the shared "not yet" column: unchecked box, Status: backlog. It is
+# where an item goes when it is real but deliberately not in flight here — a
+# blocked dependency, or a decision the operator wants to make later. check() already
+# exempts it from the active/done box rule, which is why nothing but this script
+# needs to know it exists.
+BACKLOG = "Backlog"
 NODE_ME = "dockerVM"
 LOG_DIR = "Hermes/Hermes Logs/dockerVM"
 
@@ -206,14 +214,18 @@ def open_card(args) -> int:
     note = args.note or f"{LOG_DIR}/{today()} {args.title}"
     if args.done:
         notes = [f"Carded {today()} **{now_stamp()}**, after the work landed — say why in --notes."]
+    elif args.backlog:
+        notes = [f"Noted in Backlog {today()} **{now_stamp()}** — real but not started; "
+                 f"say why it is parked in --notes."]
     else:
         notes = [f"Opened {today()} **{now_stamp()} as Step 0**, before the first action on this task."]
     notes += args.notes or []
-    block = render_card(args.title, "done" if args.done else "active", bool(args.done),
-                        args.node, f"[[{note}]]", notes)
+    status = "done" if args.done else ("backlog" if args.backlog else "active")
+    checked = bool(args.done)
+    block = render_card(args.title, status, checked, args.node, f"[[{note}]]", notes)
 
     regions = split_regions(content)
-    column = DONE if args.done else ACTIVE
+    column = DONE if args.done else (BACKLOG if args.backlog else ACTIVE)
     target = region_by_column(regions, column)
     blocks, trailer = parse_region(content, target)
     new_region = render_region(target["header"], [block] + blocks, trailer)
@@ -230,9 +242,9 @@ def open_card(args) -> int:
 
     if len(all_cards(new_content)) != len(before) + 1:
         die("refused: the rendered board does not have exactly one more card than before")
+    why = "retroactive, done" if args.done else ("Backlog note" if args.backlog else "Step 0, in flight")
     write_board(old_span, new_span,
-                f"Kanban: add card '{args.title}' to {column} "
-                f"({'retroactive, done' if args.done else 'Step 0, in flight'})")
+                f"Kanban: add card '{args.title}' to {column} ({why})")
 
     after_content, _ = read_board()
     after = all_cards(after_content)
@@ -241,8 +253,8 @@ def open_card(args) -> int:
     mine = [b for col, b in after if card_title(b).lower() == args.title.lower()]
     if len(mine) != 1:
         die(f"verify failed: expected exactly one card titled {args.title!r}, found {len(mine)}", 2)
-    want_status = "done" if args.done else "active"
-    want_box = "x" if args.done else " "
+    want_status = status
+    want_box = "x" if checked else " "
     if (card_field(mine[0], "Status").lower() != want_status
             or CARD_RE.match(mine[0][0]).group(1).lower() != want_box):
         die(f"verify failed: the new card is not {want_status} with box [{want_box}]", 2)
@@ -251,7 +263,14 @@ def open_card(args) -> int:
     return 0
 
 
-def done_card(args) -> int:
+def move_card(args, target_column: str, status: str, checked: bool, summary_prefix: str) -> int:
+    """Move one card into target_column, rewriting its box and Status to match.
+
+    `done` and `backlog` are the same operation with different destinations. The
+    tripwires are what make either safe on a board three writers share: the card
+    count is unchanged, exactly one card answers the title substring, and the
+    destination column, box and Status all agree on the re-read.
+    """
     content, _ = read_board()
     before = all_cards(content)
     matches = [(col, b) for col, b in before if args.title.lower() in card_title(b).lower()]
@@ -260,20 +279,20 @@ def done_card(args) -> int:
     if len(matches) > 1:
         die(f"{len(matches)} cards match {args.title!r} — be more specific")
     column, block = matches[0]
-    if column == DONE:
-        die(f"that card is already in {DONE}")
+    if column == target_column:
+        die(f"that card is already in {target_column}")
     title = card_title(block)
     fields = {name: card_field(block, name) for name in ("Node", "Context")}
     notes = [line.strip() for line in block if line.startswith(("\t  ", "\t- **Notes:**"))]
     notes = [re.sub(r"^- \*\*Notes:\*\* ", "", n).strip() for n in notes]
     if args.summary:
-        notes.append(f"**Done {today()}.** {args.summary}")
-    new_block = render_card(title, "done", True, fields["Node"] or NODE_ME,
+        notes.append(f"{summary_prefix} {args.summary}")
+    new_block = render_card(title, status, checked, fields["Node"] or NODE_ME,
                             fields["Context"], notes)
 
     regions = split_regions(content)
     src = region_by_column(regions, column)
-    dst = region_by_column(regions, DONE)
+    dst = region_by_column(regions, target_column)
     src_blocks, src_trailer = parse_region(content, src)
     src_blocks = [b for b in src_blocks if card_title(b).lower() != title.lower()]
     dst_blocks, dst_trailer = parse_region(content, dst)
@@ -298,8 +317,10 @@ def done_card(args) -> int:
     rebuilt = "".join(rebuilt_parts)
     new_content = content[:start] + rebuilt + content[end:]
 
+    box = "x" if checked else " "
     if args.dry_run:
-        print(f"[dry-run] card: {title}\n[dry-run] {column} -> {DONE}, box -> [x], Status -> done")
+        print(f"[dry-run] card: {title}\n[dry-run] {column} -> {target_column}, "
+              f"box -> [{box}], Status -> {status}")
         print(f"[dry-run] span {len(old_span)} -> {len(rebuilt)} chars; "
               f"cards before={len(before)} after={len(all_cards(new_content))}")
         print("[dry-run] old span head:\n" + old_span[:200])
@@ -308,7 +329,7 @@ def done_card(args) -> int:
 
     if len(all_cards(new_content)) != len(before):
         die("refused: the rendered board does not have the same card count as before")
-    write_board(old_span, rebuilt, f"Kanban: move '{title}' to {DONE}")
+    write_board(old_span, rebuilt, f"Kanban: move '{title}' to {target_column}")
 
     after_content, _ = read_board()
     after = all_cards(after_content)
@@ -318,13 +339,21 @@ def done_card(args) -> int:
     if len(moved) != 1:
         die(f"verify failed: {len(moved)} cards titled {title!r} after the move", 2)
     col, blk = moved[0]
-    status = card_field(blk, "Status").lower()
-    box = CARD_RE.match(blk[0]).group(1).lower()
-    if col != DONE or status != "done" or box != "x":
-        die(f"verify failed: column={col!r} Status={status!r} box={box!r}", 2)
-    print(f"moved to {DONE}: {title}")
-    print(f"  column={col} box=[{box}] Status={status} cards={len(after)}")
+    got_status = card_field(blk, "Status").lower()
+    got_box = CARD_RE.match(blk[0]).group(1).lower()
+    if col != target_column or got_status != status or got_box != box:
+        die(f"verify failed: column={col!r} Status={got_status!r} box={got_box!r}", 2)
+    print(f"moved to {target_column}: {title}")
+    print(f"  column={col} box=[{got_box}] Status={got_status} cards={len(after)}")
     return 0
+
+
+def done_card(args) -> int:
+    return move_card(args, DONE, "done", True, f"**Done {today()}.**")
+
+
+def backlog_card(args) -> int:
+    return move_card(args, BACKLOG, "backlog", False, f"**Parked in Backlog {today()}.**")
 
 
 def list_cards(args) -> int:
@@ -381,6 +410,9 @@ def main() -> int:
     p_open.add_argument("--done", action="store_true",
                         help="retroactive card: write it straight into Done, box checked, "
                              "Status done (for work that finished before it could be carded)")
+    p_open.add_argument("--backlog", action="store_true",
+                        help="note the card in Backlog instead: box unchecked, Status backlog "
+                             "(for a real item that is deliberately not in flight)")
     p_open.add_argument("--dry-run", action="store_true")
     p_open.set_defaults(func=open_card)
 
@@ -389,6 +421,13 @@ def main() -> int:
     p_done.add_argument("--summary", default=None, help="completion line appended to Notes")
     p_done.add_argument("--dry-run", action="store_true")
     p_done.set_defaults(func=done_card)
+
+    p_backlog = sub.add_parser("backlog", help="move a card to Backlog, box unchecked, Status backlog")
+    p_backlog.add_argument("title", help="a distinctive substring of the card title")
+    p_backlog.add_argument("--summary", default=None,
+                           help="the reason it is parked, appended to Notes")
+    p_backlog.add_argument("--dry-run", action="store_true")
+    p_backlog.set_defaults(func=backlog_card)
 
     p_list = sub.add_parser("list", help="list every card with its column, box and Status")
     p_list.set_defaults(func=list_cards)
