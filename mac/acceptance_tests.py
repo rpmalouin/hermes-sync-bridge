@@ -825,6 +825,60 @@ def test_kanban_archive_filing():
           "today's section must lead with the card the later pass filed")
 
 
+def test_stamp_ages():
+    banner("TEST 15 — a state stamp carries its offset, and a parked ask's age is real")
+    # 2026-10-10: park() wrote datetime.now() — naive — and strftime("%z") is empty on a naive
+    # value, so every parked ask carried an offset-less stamp; age_hours() then failed to parse it
+    # and its except-branch returned 0.0, which reads exactly like "parked seconds ago". The age
+    # column and oldest_pending were meaningless and a five-day-old ask never aged. The stamp must
+    # now carry its offset AND the reader must still handle the offset-less records already on disk.
+    import importlib.util
+    from datetime import datetime as _dt, timedelta as _td
+
+    spec = importlib.util.spec_from_file_location("ingest_ages", Path(__file__).resolve().parent / "ingest.py")
+    assert spec and spec.loader, "cannot load ingest.py for the age test"
+    ing = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ing)
+
+    stamp = ing.stamp_now()
+    try:
+        _dt.strptime(stamp, "%Y-%m-%dT%H:%M:%S%z")
+        offset_ok = True
+    except ValueError:
+        offset_ok = False
+    check("stamp_now() carries a UTC offset", offset_ok, stamp)
+    check("stamp_now() reads back as ~0 h", abs(ing.age_hours(stamp)) < 0.01,
+          f"{ing.age_hours(stamp):.3f}")
+
+    legacy = (_dt.now() - _td(hours=5)).strftime("%Y-%m-%dT%H:%M:%S")   # the old, naive shape
+    age = ing.age_hours(legacy)
+    check("a legacy offset-less stamp reports its true age, not 0.0", 4.9 < age < 5.1,
+          f"{age:.3f} h")
+    check("an unparseable stamp still degrades to 0.0 instead of raising",
+          ing.age_hours("not-a-stamp") == 0.0 and ing.age_hours("") == 0.0)
+
+    mailbox, vault, home = new_fixture("t15-ages")
+    env = env_for(mailbox, vault, home)
+    run_ingest(env, "--provision")
+    pf = mailbox.parent / "ages.json"
+    pf.write_text(json.dumps({
+        "request": "prove the parked stamp parses",
+        "target": "-", "requires": [], "acceptance": "-",
+        "source": "acceptance", "reply_expected": False,
+    }, indent=2))
+    run_ingest(env, "--enqueue", str(pf), "--task-type", "task_request",
+               "--author", "hermes-docker", "--consumer", "hermes-mac")
+    run_ingest(env)
+    parked = list((mailbox / "requests").glob("*.json"))
+    rec = json.loads((mailbox / "state" / f"{parked[0].stem}.request.json").read_text())
+    try:
+        _dt.strptime(rec["parked_at"], "%Y-%m-%dT%H:%M:%S%z")
+        rec_ok = True
+    except ValueError:
+        rec_ok = False
+    check("a parked record's parked_at parses with its offset", rec_ok, rec["parked_at"])
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--verbose", action="store_true")
@@ -849,6 +903,7 @@ def main():
     test_publish_drops_stub()
     test_carding_optin()
     test_kanban_archive_filing()
+    test_stamp_ages()
 
     banner("SUMMARY")
     passed = sum(1 for _l, ok, _d in RESULTS if ok)

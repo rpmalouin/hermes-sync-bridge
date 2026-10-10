@@ -324,7 +324,7 @@ def write_status(root: Path, message_id: str, attempts: int, reason: str, phase:
         "attempts": attempts,
         "last_reason": reason,
         "author": author,
-        "at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "at": stamp_now(),
     }
     p.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     drop_stub(p)
@@ -888,7 +888,7 @@ def park(root: Path, path: Path, message: dict) -> tuple:
         "message_id": message["message_id"],
         "status": "pending",
         "consumer": message.get("consumer"),
-        "parked_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "parked_at": stamp_now(),
         "author": message.get("author"),
         "created_at": message.get("created_at"),
         "typed": typed,
@@ -940,12 +940,29 @@ def load_requests(root: Path, only_mine: bool = True) -> list:
     return sorted(out, key=lambda d: str(d.get("parked_at") or ""))
 
 
+def stamp_now() -> str:
+    """A local state stamp WITH its UTC offset.
+
+    datetime.now() is naive, and strftime("%z") is empty on a naive value - so every
+    stamp this module wrote before 2026-10-10 landed with no offset, could not be
+    parsed back by age_hours(), and made each fallback return 0.0: every parked ask
+    read as seconds old and oldest_pending was meaningless. One helper, one format,
+    one place to fix.
+    """
+    return datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M:%S%z")
+
+
 def age_hours(stamp: str) -> float:
-    try:
-        t = datetime.strptime(str(stamp), "%Y-%m-%dT%H:%M:%S%z")
-    except (ValueError, TypeError):
-        return 0.0
-    return (datetime.now(t.tzinfo) - t).total_seconds() / 3600.0
+    """Hours since a state stamp, tolerant of the offset-less records already on disk."""
+    for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            t = datetime.strptime(str(stamp), fmt)
+        except (ValueError, TypeError):
+            continue
+        if t.tzinfo is None:            # written before stamp_now(): local time, no offset
+            t = t.astimezone()
+        return (datetime.now(t.tzinfo) - t).total_seconds() / 3600.0
+    return 0.0
 
 
 def request_counts(root: Path) -> dict:
@@ -980,7 +997,7 @@ def close_request(root: Path, message_id: str, how: str, summary: str = "", deta
     d = json.loads(p.read_text())
     archived = archive_request_file(root, d)
     d["status"] = how
-    d["closed_at"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z")
+    d["closed_at"] = stamp_now()
     if summary:
         d["close_summary"] = summary
     receipt = None
@@ -1619,7 +1636,7 @@ def main(argv=None) -> int:
     note = write_request_note(root, args.vault, args.dry_run)
 
     if not args.dry_run:
-        st["last_run"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z")
+        st["last_run"] = stamp_now()
         st["last_result"] = (
             f"applied={counts['applied']} dup={counts['duplicates']} failed={counts['failed']} "
             f"requeued={counts['requeued']} parked={counts['parked']} pending={rc['pending']} "
@@ -1641,7 +1658,7 @@ def main(argv=None) -> int:
             or age_hours(str(prev.get("at", ""))) >= REQUEST_NOTICE_MINUTES / 60.0):
         out(f"REQUESTS PENDING: {len(pending_ids)} unactioned, oldest {rc['oldest_h']:.1f} h — "
             f"{', '.join(pending_ids)} (see {REQUEST_NOTE_REL.as_posix()} or `--requests`)")
-        st["request_notice"] = {"at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z"), "ids": pending_ids}
+        st["request_notice"] = {"at": stamp_now(), "ids": pending_ids}
         save_state(root, st)
         drop_stub(state_file(root))
 
