@@ -78,6 +78,28 @@ def mcp(tool: str, arguments: dict) -> dict:
     return reply["result"]
 
 
+def note_exists(note: str):
+    """True if the vault resolves this note path, False if it does not, None if the check itself failed.
+
+    A card's Context link is a promise that the note exists. `open` derives that link from the card
+    title, so a card opened before its note is written used to leave a dangling wikilink that the
+    weekly vault audit counts as critical (four such links by 2026-10-17). Ask the vault instead of
+    assuming: a `slug` of null means no such note.
+    """
+    out = subprocess.run([sys.executable, HELPER, "resolve_wikilink",
+                          json.dumps({"vault_id": VAULT_ID, "target": note})],
+                         capture_output=True, text=True, timeout=180)
+    if out.returncode != 0 or not out.stdout.strip():
+        return None
+    try:
+        reply = json.loads(out.stdout.strip().splitlines()[-1])
+    except ValueError:
+        return None
+    if not reply.get("ok"):
+        return None
+    return bool((reply.get("result") or {}).get("slug"))
+
+
 def read_board() -> tuple[str, str]:
     note = mcp("get_note", {"slug": SLUG, "vault_id": VAULT_ID})
     if "note" not in note:
@@ -212,6 +234,13 @@ def open_card(args) -> int:
     if any(args.title.lower() in card_title(b).lower() for _, b in before):
         die(f"a card matching {args.title!r} already exists — nothing opened, nothing changed")
     note = args.note or f"{LOG_DIR}/{today()} {args.title}"
+    exists = note_exists(note)
+    dangling = exists is False
+    if dangling:
+        # Never publish a link the vault cannot resolve: the audit counts each one as critical.
+        context = f"{note} (no note yet — plain text on purpose)"
+    else:
+        context = f"[[{note}]]"
     if args.done:
         notes = [f"Carded {today()} **{now_stamp()}**, after the work landed — say why in --notes."]
     elif args.backlog:
@@ -222,7 +251,7 @@ def open_card(args) -> int:
     notes += args.notes or []
     status = "done" if args.done else ("backlog" if args.backlog else "active")
     checked = bool(args.done)
-    block = render_card(args.title, status, checked, args.node, f"[[{note}]]", notes)
+    block = render_card(args.title, status, checked, args.node, context, notes)
 
     regions = split_regions(content)
     column = DONE if args.done else (BACKLOG if args.backlog else ACTIVE)
@@ -259,7 +288,13 @@ def open_card(args) -> int:
             or CARD_RE.match(mine[0][0]).group(1).lower() != want_box):
         die(f"verify failed: the new card is not {want_status} with box [{want_box}]", 2)
     print(f"added to {column}: {args.title}")
-    print(f"  cards {len(before)} -> {len(after)}, Context [[{note}]]")
+    print(f"  cards {len(before)} -> {len(after)}, Context {context}")
+    if dangling:
+        print(f"  WARNING: there is no note at {note!r}. The Context is PLAIN TEXT on purpose — a card")
+        print(f"           must not contribute a broken wikilink to the vault audit. Write the note, then")
+        print(f"           repoint the card's Context at it.")
+    elif exists is None:
+        print("  note: could not verify the Context note exists (vault check failed); linked anyway.")
     return 0
 
 
