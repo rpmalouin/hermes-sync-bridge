@@ -238,8 +238,23 @@ def apply_message(claimed: Path, message_id: str, message: dict, counted: dict,
     if task_type == "dev_update":
         lines.append(f"READ {message_id} from {author}{reply_note}: {summary}")
         digest(f"READ {message_id} ({task_type}) from {author}{reply_note}: {summary}")
-        for detail in payload.get("details") or []:
-            digest(f"    - {detail}")
+        # `details` is a LIST in this producer's own messages but a single newline-joined STRING in
+        # the Mac producer's (schema 1 permits both). Iterating that string emits one digest line per
+        # CHARACTER - measured 2026-10-19: one 11-detail arrival produced ~30 lines of single letters.
+        details = payload.get("details") or []
+        if isinstance(details, str):
+            details = [ln.strip() for ln in details.splitlines() if ln.strip()]
+        elif not isinstance(details, list):
+            details = [str(details)]
+        for detail in details:
+            # The digest already prefixes "    - "; a source line that starts with its own bullet
+            # ("- Disabled local_runtime in config.") would otherwise read "    - - Disabled ...".
+            text = str(detail).strip()
+            for bullet in ("- ", "* ", "• "):
+                if text.startswith(bullet):
+                    text = text[len(bullet):].strip()
+                    break
+            digest(f"    - {text}")
     else:
         lines.append(f"READ {message_id} from {author}{reply_note}: {task_type}")
         digest(f"READ {message_id} ({task_type}) from {author}{reply_note}")
