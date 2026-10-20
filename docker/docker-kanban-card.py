@@ -138,10 +138,26 @@ def split_regions(content: str) -> list[dict]:
 
 
 def region_by_column(regions: list[dict], column: str) -> dict:
+    """Find a column, tolerating the node-suffixed split of a shared column.
+
+    The Mac side splits a shared column per node (`## Backlog` became
+    `## Backlog Hermes-Mac` / `## Backlog Hermes-dockerVM`), so an exact match on
+    the bare name silently starts failing. Prefer an exact header, then the
+    variant owned by THIS node, then a lone suffixed variant; anything else is
+    ambiguous and must not be guessed.
+    """
+    headers = [r["header"] for r in regions if r["header"]]
     for region in regions:
         if region["header"] == f"## {column}":
             return region
-    die(f"no column '## {column}' in the board — refusing to invent one")
+    prefixed = [r for r in regions if (r["header"] or "").startswith(f"## {column} ")]
+    for region in prefixed:
+        if NODE_ME.lower() in region["header"].lower():
+            return region
+    if len(prefixed) == 1:
+        return prefixed[0]
+    die(f"no unambiguous column '## {column}' in the board "
+        f"(candidates: {headers}) — refusing to invent one")
 
 
 def parse_region(content: str, region: dict) -> tuple[list[str], list[list[str]]]:
@@ -418,7 +434,7 @@ def check_cards(args) -> int:
             problems.append(f"no Node: {title}")
         if column == DONE and (box != "x" or status != "done"):
             problems.append(f"Done card not checked/done (box=[{box}] Status={status!r}): {title}")
-        if column != DONE and column != "Backlog" and (box == "x" or status == "done"):
+        if column != DONE and not column.startswith(BACKLOG) and (box == "x" or status == "done"):
             problems.append(f"active card checked/done (box=[{box}] Status={status!r}): {title}")
     seen = {}
     for _, block in cards:
