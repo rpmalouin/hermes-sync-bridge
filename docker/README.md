@@ -16,6 +16,7 @@ Run `./docker/deploy.sh --check` to see drift between this directory and what ac
 | `hermes-docker-inbox-cron.sh` | `~/.hermes/scripts/hermes-docker-inbox-cron.sh` | the wrapper cron `cron-job-id` calls every minute |
 | `hermes-docker-request-close.py` | `~/.hermes/scripts/hermes-docker-request-close.py` | closes a parked ask and publishes the contract's receipt |
 | `docker-kanban-card.py` | `~/.hermes/scripts/docker-kanban-card.py` | `open` / `done` / `list` / `check` — cards our work in the shared Kanban with the plugin's exact shape, a count tripwire and hash-guarded edits |
+| `paperless-docling-ocr.py` | `~/.hermes/scripts/paperless-docling-ocr.py` | `scan` / `convert <id> [--apply]` / `revert <id>` — docling extraction for paperless-ngx: holds the docling API key, sends the whole document once, writes `content` only behind `--apply` with a rollback copy and a `docling-ocr` tag. Replaced paperless-gpt's unauthenticated docling provider (2026-10-22). |
 | `deploy.sh` | — | installs the rows above; `--check`, `--dry-run` |
 
 ## How a change lands here
