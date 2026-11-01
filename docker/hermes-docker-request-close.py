@@ -29,7 +29,12 @@ CONSUMERS = ("hermes-mac", "hermes-docker")
 
 
 def now_local() -> str:
-    return datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%dT%H:%M:%S")
+    """Local wall-clock stamp WITH its offset — same fix as hermes-docker-inbox.py:local_stamp().
+
+    `closed_at` lands in the same state record the Mac's age_hours() reads, so leaving it naive
+    while fixing `parked_at` would be the same defect class half-done.
+    """
+    return datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%dT%H:%M:%S%z")
 
 
 def now_z() -> str:

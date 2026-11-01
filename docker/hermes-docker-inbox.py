@@ -78,7 +78,15 @@ def stamp() -> str:
 
 
 def local_stamp() -> str:
-    return now().astimezone().strftime("%Y-%m-%dT%H:%M:%S")
+    """Local wall-clock stamp WITH its offset.
+
+    This used to drop the offset, so `parked_at` was indistinguishable from a naive stamp and the
+    Mac's age_hours() had to assume a meaning. mac/ingest.py tries "%Y-%m-%dT%H:%M:%S%z" FIRST and
+    falls back to the offset-less form, so an aware stamp parses there with no Mac change, and the
+    records already on disk keep working through that fallback (nothing is migrated).
+    No reader of parked_at exists on this side: the claim reaper and the lock age use st_mtime.
+    """
+    return now().astimezone().strftime("%Y-%m-%dT%H:%M:%S%z")
 
 
 def digest(line: str) -> None:
