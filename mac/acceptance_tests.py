@@ -26,6 +26,19 @@ SANDBOX = Path("/tmp/mailbox-acceptance")
 REAL_VAULT = Path("/Volumes/Data/vault")
 PY = sys.executable or "python3"
 
+
+def companion(name: str) -> Path:
+    """Locate a companion tool: beside this script (the repo), or where deploy installs it.
+
+    The deployed layout keeps only the consumer (ingest.py + this file) next to the skill and
+    puts the board tooling in ~/.hermes/scripts, so a bare HERE / name made the deployed run
+    fail with rc=2 on a file that exists -- it just lives somewhere else.
+    """
+    for cand in (HERE / name, Path.home() / ".hermes" / "scripts" / name):
+        if cand.exists():
+            return cand
+    raise SystemExit(f"cannot find {name}: looked in {HERE} and ~/.hermes/scripts")
+
 RESULTS = []
 
 
@@ -752,7 +765,7 @@ def test_kanban_archive_filing():
         "← [[Hermes/Hermes|Home]]\n\n"
         f"## Archived 2026-09-22\n\n- [x] An older card\n{t}- **Task:** An older card\n{t}- **Status:** done\n")
 
-    roll = HERE / "kanban-archive-roll.py"
+    roll = companion("kanban-archive-roll.py")
     today = datetime.now().strftime("%Y-%m-%d")
 
     def run_roll(*args):
