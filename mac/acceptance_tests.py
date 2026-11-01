@@ -850,9 +850,23 @@ def test_stamp_ages():
     check("stamp_now() reads back as ~0 h", abs(ing.age_hours(stamp)) < 0.01,
           f"{ing.age_hours(stamp):.3f}")
 
-    legacy = (_dt.now() - _td(hours=5)).strftime("%Y-%m-%dT%H:%M:%S")   # the old, naive shape
+    # A naive stamp is local WALL time, and wall time is not elapsed time: five hours back can
+    # span a DST boundary and be six real hours on the clock -- it is, on the fall-back morning.
+    # So assert the INTERPRETATION (local wall time, never UTC) plus a band wide enough for the
+    # one-hour skew, instead of a literal 5.0 that only holds away from a transition.
+    legacy_dt = (_dt.now() - _td(hours=5)).replace(microsecond=0)   # the old, naive shape
+    legacy = legacy_dt.strftime("%Y-%m-%dT%H:%M:%S")
     age = ing.age_hours(legacy)
-    check("a legacy offset-less stamp reports its true age, not 0.0", 4.9 < age < 5.1,
+    now_local = _dt.now().astimezone()
+    as_local = (now_local - legacy_dt.astimezone()).total_seconds() / 3600.0
+    as_utc = (now_local - legacy_dt.replace(tzinfo=timezone.utc)).total_seconds() / 3600.0
+    offset_h = (now_local.utcoffset() or _td(0)).total_seconds() / 3600.0
+    check("a legacy offset-less stamp is read as local wall time", abs(age - as_local) < 0.01,
+          f"{age:.3f} h vs local {as_local:.3f} h")
+    check("a legacy offset-less stamp is not read as UTC",
+          abs(offset_h) < 0.01 or abs(age - as_utc) > 0.5,
+          f"{age:.3f} h vs utc {as_utc:.3f} h, host offset {offset_h:+.0f} h")
+    check("a legacy offset-less stamp reports a real age, not 0.0", 4.0 < age < 6.1,
           f"{age:.3f} h")
     check("an unparseable stamp still degrades to 0.0 instead of raising",
           ing.age_hours("not-a-stamp") == 0.0 and ing.age_hours("") == 0.0)
