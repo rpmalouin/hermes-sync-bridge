@@ -66,6 +66,35 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+
+def read_text_fresh(path: Path) -> str:
+    """Read a share-backed file with the local page cache bypassed.
+
+    macOS caches CIFS reads in the unified buffer cache, so a pathname the
+    other host just reused can serve the PREVIOUS file's bytes -- correct
+    length, wrong content, NUL padded. That parses as "Extra data" and
+    quarantines a perfectly valid message. F_NOCACHE sends the read to the
+    server, and the read refreshes the cached copy for every later open.
+    """
+    try:
+        import fcntl
+
+        fd = os.open(path, os.O_RDONLY)
+        try:
+            fcntl.fcntl(fd, fcntl.F_NOCACHE, 1)
+            chunks = []
+            while True:
+                block = os.read(fd, 1 << 20)
+                if not block:
+                    break
+                chunks.append(block)
+        finally:
+            os.close(fd)
+        return b"".join(chunks).decode("utf-8")
+    except (ImportError, AttributeError, OSError):
+        return path.read_text()
+
+
 WATCH_DEFAULT = Path(os.environ.get("MAILBOX_ROOT") or "/Volumes/appdata/hermes-Mac-Updates")
 VAULT_DEFAULT = Path(os.environ.get("VAULT_ROOT") or "/Volumes/Data/vault")
 KANBAN_REL = Path("Hermes/Hermes Kanban.md")
@@ -402,7 +431,7 @@ REQUIRED_FIELDS = ("message_id", "author", "created_at", "task_type")
 def read_envelope(path: Path) -> dict:
     """Load + validate an envelope. Raises ValueError with a reason."""
     try:
-        raw = json.loads(path.read_text())
+        raw = json.loads(read_text_fresh(path))
     except json.JSONDecodeError as e:
         raise ValueError(f"unparseable JSON: {e}")
     except OSError as e:
