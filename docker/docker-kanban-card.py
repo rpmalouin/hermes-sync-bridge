@@ -36,7 +36,32 @@ from pathlib import Path
 
 VAULT_ID = "vault-id"
 SLUG = "hermes-kanban"
-HELPER = "/root/.hermes/scripts/hatchdoor-mcp-call.py"
+HERE = Path(__file__).resolve().parent
+HELPER_NAME = "hatchdoor-mcp-call.py"
+
+
+def resolve_helper() -> Path:
+    """Locate the Hatchdoor MCP shim: beside this script, then the deployed scripts dir.
+
+    This was the absolute "/root/.hermes/scripts/hatchdoor-mcp-call.py", so the script could not run
+    from a bare clone and its failure mode was a subprocess FileNotFoundError rather than a sentence.
+    Mirrors mac/acceptance_tests.py:companion(). The DEPLOYED copy still resolves on the first
+    candidate, because HERE *is* /root/.hermes/scripts there, so the cron path cannot regress.
+
+    No env override is documented for this script, so none was invented; a HERMES_SCRIPTS_DIR
+    override belongs here only once it is written down somewhere a caller would read.
+    """
+    candidates = [HERE / HELPER_NAME,
+                  Path.home() / ".hermes" / "scripts" / HELPER_NAME,
+                  Path("/root/.hermes/scripts") / HELPER_NAME]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise SystemExit(f"cannot find {HELPER_NAME}: looked in "
+                     + ", ".join(str(c) for c in candidates))
+
+
+HELPER = str(resolve_helper())
 ACTIVE = "Hermes-dockerVM (Active)"
 DONE = "Done"
 # Backlog is the shared "not yet" column: unchecked box, Status: backlog. It is
