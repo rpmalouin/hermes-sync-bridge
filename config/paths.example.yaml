@@ -36,3 +36,7 @@ consumers:
 #   MAILBOX_ROOT        the queue on this host       (default /Volumes/appdata/hermes-Mac-Updates)
 #   MAILBOX_SCHEMA      the canonical SCHEMA.md, read from the queue, never from a copy
 #   HATCHDOOR_VAULT_ID  the vault id the board tooling edits (no default: it is an instance id)
+#   SYNC_BRIDGE_ENV     the instance file those settings can also live in
+#                       (default ~/.hermes/sync-bridge.env — see config/instance.env.example).
+#                       Precedence: argument > environment > instance file > placeholder default.
+#                       The repo's own defaults are placeholders, never a real vault.

@@ -26,6 +26,20 @@ SANDBOX = Path("/tmp/mailbox-acceptance")
 REAL_VAULT = Path(os.environ.get("VAULT_ROOT") or "/Volumes/Data/vault")
 PY = sys.executable or "python3"
 
+# Stand-in board for a host (or a clone) with no real vault. It carries only what the consumer
+# needs — the two column headings it appends under, in board order — deliberately not a copy of
+# the live board, which is per-machine data.
+BOARD_FIXTURE = """---
+kanban-plugin: board
+---
+
+## Hermes-Mac (Active)
+
+## Hermes-dockerVM (Active)
+
+## Done
+"""
+
 
 def companion(name: str) -> Path:
     """Locate a companion tool: beside this script (the repo), or where deploy installs it.
@@ -55,7 +69,13 @@ def check(label: str, ok: bool, detail: str = "") -> bool:
 
 
 def new_fixture(name: str):
-    """Fresh mailbox + fresh vault (with the real board copied in) for one test."""
+    """Fresh mailbox + fresh vault for one test.
+
+    The board is copied from the real vault when this host has one — that copy is what catches a
+    change in the plugin's own shape — and synthesised otherwise. The fallback matters because the
+    repo's default vault is a placeholder: a clone has no board to copy, and the suite must still
+    run there instead of dying on a fixture the host was supposed to provide.
+    """
     base = SANDBOX / name
     if base.exists():
         shutil.rmtree(base)
@@ -65,6 +85,8 @@ def new_fixture(name: str):
     board = REAL_VAULT / "Hermes/Hermes Kanban.md"
     if board.exists():
         shutil.copy2(board, vault / "Hermes/Hermes Kanban.md")
+    else:
+        (vault / "Hermes/Hermes Kanban.md").write_text(BOARD_FIXTURE)
     (vault / "Co-edit log.md").write_text("# Co-edit log\n\n")
     home = base / "home"
     (home / "state").mkdir(parents=True)
@@ -906,6 +928,48 @@ def test_stamp_ages():
     check("a parked record's parked_at parses with its offset", rec_ok, rec["parked_at"])
 
 
+def test_instance_paths():
+    banner("TEST 16 — instance paths: the file supplies the vault, the env beats it, a missing vault is fatal")
+    mailbox, vault, home = new_fixture("t16-instance")
+    base = mailbox.parent
+    other = base / "vault-env-wins"
+    (other / "Hermes/Hermes Logs/dockerVM").mkdir(parents=True)
+    (other / "Hermes/Hermes Kanban.md").write_text(BOARD_FIXTURE)
+    (other / "Co-edit log.md").write_text("# Co-edit log\n\n")
+
+    envfile = base / "sync-bridge.env"
+    envfile.write_text(f"# instance file -- never in the repo\nVAULT_ROOT={vault}\n")
+
+    env = env_for(mailbox, vault, home)
+    env.pop("VAULT_ROOT")                      # nothing but the file names the vault now
+    env["SYNC_BRIDGE_ENV"] = str(envfile)
+
+    run_ingest(env, "--provision")
+    run_ingest(env, "--enqueue", str(write_payload_file(base, payload())))
+    run_ingest(env)
+    check("the instance file supplies VAULT_ROOT when the environment does not",
+          "- [ ] worldmonitor-v2" in (vault / "Hermes/Hermes Kanban.md").read_text())
+
+    # The environment must still win over the file: otherwise a sandbox run that forgets
+    # VAULT_ROOT would write to whatever the instance file names — the real vault.
+    run_ingest(env, "--enqueue", str(write_payload_file(base, payload(name="env-wins"))))
+    env2 = dict(env)
+    env2["VAULT_ROOT"] = str(other)
+    run_ingest(env2)
+    check("VAULT_ROOT in the environment beats the instance file",
+          "- [ ] env-wins" in (other / "Hermes/Hermes Kanban.md").read_text()
+          and "- [ ] env-wins" not in (vault / "Hermes/Hermes Kanban.md").read_text())
+
+    # A vault that is not there must stop the run, not read as an empty queue.
+    env3 = dict(env)
+    env3.pop("SYNC_BRIDGE_ENV", None)
+    env3["VAULT_ROOT"] = str(base / "no-such-vault")
+    p = subprocess.run([PY, str(INGEST)], env=env3, capture_output=True, text=True)
+    check("a missing vault exits non-zero and names the fix",
+          p.returncode != 0 and "not a directory" in (p.stdout + p.stderr),
+          f"rc={p.returncode} {(p.stderr or p.stdout).strip().splitlines()[:1]}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--verbose", action="store_true")
@@ -931,6 +995,7 @@ def main():
     test_carding_optin()
     test_kanban_archive_filing()
     test_stamp_ages()
+    test_instance_paths()
 
     banner("SUMMARY")
     passed = sum(1 for _l, ok, _d in RESULTS if ok)

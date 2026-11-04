@@ -50,8 +50,26 @@ pairs() {
 sha() { shasum -a 256 "$1" | awk '{print $1}'; }
 show() { echo "${1/#$TARGET_HOME/~}"; }
 
+# ---- instance vault: resolved the way the INSTALLED code will ---------------------------------
+# The repo ships a PLACEHOLDER vault on purpose (the real one is per-machine state). Installing it
+# verbatim points the live consumer at a path that does not exist, and the consumer's own guard then
+# fails the 1-minute cron every minute — loudly, but broken. So resolve the vault by the installed
+# code's own precedence — environment, then the instance file, then the placeholder — and refuse to
+# install when it resolves to nothing.
+INSTANCE_ENV="${SYNC_BRIDGE_ENV:-$TARGET_HOME/.hermes/sync-bridge.env}"
+resolve_vault() {
+  local v="${VAULT_ROOT:-}"
+  if [ -z "$v" ] && [ -f "$INSTANCE_ENV" ]; then
+    v="$(sed -n 's/^[[:space:]]*VAULT_ROOT[[:space:]]*=[[:space:]]*//p' "$INSTANCE_ENV" \
+      | tail -1 | sed 's/[[:space:]]*$//' | tr -d '"' | tr -d "'")"
+  fi
+  echo "${v:-/Volumes/Data/vault}"
+}
+VAULT="$(resolve_vault)"
+
 # ---- check mode: no writes, exit non-zero on drift ---------------------------------------
 if [ "$CHECK" = 1 ]; then
+  echo "vault    $(show "$VAULT")$( [ -d "$VAULT" ] || echo '   (NOT A DIRECTORY — a deploy would refuse)')"
   drift=0
   while IFS='|' read -r src dst; do
     if [ ! -d "$(dirname "$dst")" ]; then
@@ -70,10 +88,20 @@ if [ "$CHECK" = 1 ]; then
 fi
 
 # ---- gates: the contract and the end-to-end suite must pass before anything is installed ---
+if [ ! -d "$VAULT" ]; then
+  echo "FATAL: the vault resolves to $VAULT, which is not a directory — nothing was installed." >&2
+  echo "       The repo ships a placeholder path on purpose; the instance supplies the real one:" >&2
+  echo "         echo 'VAULT_ROOT=/path/to/vault' >> $INSTANCE_ENV" >&2
+  echo "       (or export VAULT_ROOT=... for this run)." >&2
+  exit 1
+fi
 echo "== gates =="
+echo "   vault: $(show "$VAULT")"
 python3 "$REPO/shared/test_protocol.py" >/dev/null
 echo "   contract tests: pass"
-python3 "$REPO/mac/acceptance_tests.py" >/dev/null
+# VAULT_ROOT is exported so the suite seeds its board fixture from THIS instance's real board;
+# without it the suite still runs (it synthesises one), it just tests against less of the truth.
+VAULT_ROOT="$VAULT" python3 "$REPO/mac/acceptance_tests.py" >/dev/null
 echo "   acceptance suite: pass"
 
 if [ "$DRY" = 1 ]; then

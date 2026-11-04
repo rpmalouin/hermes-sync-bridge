@@ -67,7 +67,7 @@ host, which is how you answer "is that side alive?").
 git clone https://github.com/rpmalouin/hermes-sync-bridge.git
 cd hermes-sync-bridge
 python3 shared/test_protocol.py --require-schema     # contract, incl. drift vs SCHEMA.md
-python3 mac/acceptance_tests.py                      # ~100 end-to-end checks, sandboxed
+python3 mac/acceptance_tests.py                      # 130+ end-to-end checks, sandboxed
 ./mac/deploy.sh --check                              # repo vs the live installs
 ./mac/deploy.sh                                      # install (tests first, atomic, rollback)
 ```
@@ -103,11 +103,30 @@ Ownership is in the next section — their deploy step is theirs to run.
 
 ## Configuration, not hardcoded hosts
 
-Nothing host-specific is compiled in. `config/mailbox.env.example` and `config/paths.example.yaml`
-are the templates, and the scripts read `MAILBOX_ROOT`, `MAILBOX_SCHEMA`, `VAULT_ROOT`,
-`KANBAN_VAULT` and `HATCHDOOR_VAULT_ID` from the environment. The paths in the examples describe
-the shape of a working deployment rather than a machine: copy the example, edit the copy, never
-commit it.
+Nothing host-specific is compiled in. `config/mailbox.env.example`,
+`config/instance.env.example` and `config/paths.example.yaml` are the templates, and the scripts
+read `MAILBOX_ROOT`, `MAILBOX_SCHEMA`, `VAULT_ROOT`, `KANBAN_VAULT` and `HATCHDOOR_VAULT_ID` from
+the environment. The paths in the examples describe the shape of a working deployment rather than a
+machine: copy the example, edit the copy, never commit it.
+
+**The vault path comes from the instance, not from the code.** The repo's own default
+(`/Volumes/Data/vault`) is a deliberate placeholder, so a fresh clone can never write into
+somebody's real vault. Supply the real one in either of two ways, and both the consumer and the
+board tooling honour the same order — explicit argument, then environment, then instance file,
+then the placeholder:
+
+```bash
+# 1. the instance file (survives cron, which inherits no shell environment)
+printf 'VAULT_ROOT=/path/to/your/vault\n' >> ~/.hermes/sync-bridge.env
+
+# 2. or the environment, for one run
+VAULT_ROOT=/path/to/your/vault ./mac/deploy.sh
+```
+
+`SYNC_BRIDGE_ENV` relocates the file. The file lives outside the repo on purpose: it is per-machine
+state, and a published repo should carry none of it. `mac/deploy.sh` resolves the vault the same way
+the installed code will and **refuses to install** when it resolves to something that is not a
+directory — a placeholder installed over a live consumer would fail its 1-minute cron every minute.
 
 Two consequences worth knowing before you deploy:
 

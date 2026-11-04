@@ -31,9 +31,31 @@ import shutil
 import sys
 from pathlib import Path
 
-# The same override ingest.py honours; the example deployment keeps the vault on an external
-# volume, so the default is that volume and never a home directory.
-VAULT_ROOT = Path(os.environ.get("VAULT_ROOT") or "/Volumes/Data/vault")
+# Instance paths: the repo ships a PLACEHOLDER vault on purpose, so the real one comes from the
+# environment or from a per-machine file outside the repo. Resolution order: VAULT_ROOT env,
+# then $SYNC_BRIDGE_ENV (default ~/.hermes/sync-bridge.env), then the placeholder default.
+# The same helper is duplicated in ingest.py and kanban-archive-roll.py: these files are installed
+# into two different directories and must stay standalone.
+INSTANCE_ENV = Path(os.environ.get("SYNC_BRIDGE_ENV") or (Path.home() / ".hermes/sync-bridge.env"))
+
+
+def instance_var(key: str) -> str | None:
+    """Value of KEY from the instance file, or None. A missing file is not an error."""
+    try:
+        text = INSTANCE_ENV.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line or "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        if k.strip() == key:
+            return v.strip().strip('"').strip("'") or None
+    return None
+
+
+VAULT_ROOT = Path(os.environ.get("VAULT_ROOT") or instance_var("VAULT_ROOT") or "/Volumes/Data/vault")
 BOARD = VAULT_ROOT / "Hermes/Hermes Kanban.md"
 HEAD_RX = re.compile(r"^##\s+(.+?)\s*$")
 CARD_RX = re.compile(r"^[ \t]*- \[[ x]\][ \t]*(.*\S)?[ \t]*$")

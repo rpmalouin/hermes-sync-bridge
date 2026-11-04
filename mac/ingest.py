@@ -56,6 +56,8 @@ Usage:
                       [--enqueue FILE] [--task-type SLUG] [--author NAME]
     Env overrides: MAILBOX_ROOT, VAULT_ROOT, MAILBOX_LEASE_MINUTES,
                    MAILBOX_MAX_ATTEMPTS, HERMES_HOME
+    Instance file: VAULT_ROOT may also come from $SYNC_BRIDGE_ENV
+                   (default ~/.hermes/sync-bridge.env) — the repo's own defaults are placeholders.
 """
 import argparse
 import json
@@ -95,8 +97,38 @@ def read_text_fresh(path: Path) -> str:
         return path.read_text()
 
 
+# ---- instance paths -----------------------------------------------------------------------
+# This repo ships PLACEHOLDER paths on purpose: the real vault location is per-machine state and
+# belongs in neither git nor the published artefact. The instance supplies it in one of two ways,
+# in this order: the process environment (VAULT_ROOT), or a key=value file outside the repo
+# ($SYNC_BRIDGE_ENV, default ~/.hermes/sync-bridge.env). An explicit --vault beats both.
+# The same helper is duplicated in mac/kanban-card.py and mac/kanban-archive-roll.py: the three
+# files are installed into two different directories, so they must stay standalone.
+INSTANCE_ENV = Path(os.environ.get("SYNC_BRIDGE_ENV") or (Path.home() / ".hermes/sync-bridge.env"))
+
+
+def instance_var(key: str) -> str | None:
+    """Value of KEY from the instance file, or None. A missing file is not an error."""
+    try:
+        text = INSTANCE_ENV.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line or "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        if k.strip() == key:
+            return v.strip().strip('"').strip("'") or None
+    return None
+
+
+def vault_root_default() -> Path:
+    return Path(os.environ.get("VAULT_ROOT") or instance_var("VAULT_ROOT") or "/Volumes/Data/vault")
+
+
 WATCH_DEFAULT = Path(os.environ.get("MAILBOX_ROOT") or "/Volumes/appdata/hermes-Mac-Updates")
-VAULT_DEFAULT = Path(os.environ.get("VAULT_ROOT") or "/Volumes/Data/vault")
+VAULT_DEFAULT = vault_root_default()
 KANBAN_REL = Path("Hermes/Hermes Kanban.md")
 LOGS_REL = Path("Hermes/Hermes Logs/dockerVM")
 COEDIT_REL = Path("Co-edit log.md")
@@ -1263,7 +1295,8 @@ def drain_queue(root: Path, vault: Path, args, notices: list) -> dict:
     """
     if not vault.is_dir():
         raise SystemExit(
-            f"FATAL: vault root {vault} is not a directory — set VAULT_ROOT (or pass --vault).\n"
+            f"FATAL: vault root {vault} is not a directory — set VAULT_ROOT, put it in "
+            f"{INSTANCE_ENV}, or pass --vault.\n"
             "       A missing vault must not read as an empty queue."
         )
     L = layout(root)

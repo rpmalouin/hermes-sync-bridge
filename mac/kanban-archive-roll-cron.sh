@@ -21,6 +21,15 @@
 # roller refuses (rc=2) rather than half-writing if any invariant would break; it rolls back itself.
 set -uo pipefail
 
+# The repo ships a PLACEHOLDER vault on purpose; the real one is per-machine state and comes from
+# the environment or from a key=value file outside the repo ($SYNC_BRIDGE_ENV, default
+# ~/.hermes/sync-bridge.env) — the same file the Python tools read.
+INSTANCE_ENV="${SYNC_BRIDGE_ENV:-$HOME/.hermes/sync-bridge.env}"
+if [ -z "${VAULT_ROOT:-}" ] && [ -f "$INSTANCE_ENV" ]; then
+  VAULT_ROOT="$(sed -n 's/^[[:space:]]*VAULT_ROOT[[:space:]]*=[[:space:]]*//p' "$INSTANCE_ENV" \
+    | tail -1 | sed 's/[[:space:]]*$//' | tr -d '"' | tr -d "'")"
+  export VAULT_ROOT
+fi
 VAULT="${KANBAN_VAULT:-${VAULT_ROOT:-/Volumes/Data/vault}}"
 ROLL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/kanban-archive-roll.py"
 BOARD="$VAULT/Hermes/Hermes Kanban.md"
