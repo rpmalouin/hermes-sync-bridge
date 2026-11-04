@@ -6,7 +6,7 @@
 |---|---|---|
 | **Writes to** | the vault, the board, its own skill/script dirs | the queue, its own scripts; the vault **only when asked** |
 | **Queue role** | consumer of `hermes-mac` mail; publisher of receipts and asks | producer of `dev_update` / `ping` / `task_request`; consumer of `hermes-docker` mail |
-| **Loop** | cron `cron-job-id`, every 1 minute, `deliver=local`, prompt-mediated | its own inbox consumer, every 1 minute, delivers to a chat |
+| **Loop** | cron `<cron-job-id>`, every 1 minute, `deliver=local`, prompt-mediated | its own inbox consumer, every 1 minute, delivers to a chat |
 | **Board role** | keeps `Hermes-Mac (Active)` → `Done` live | keeps `Hermes-dockerVM (Active)` → `Done` live |
 
 Neither side is "the writer". Both consume, both publish, and since the Hatchdoor restore the VM
@@ -50,7 +50,7 @@ Mac                                        DockerVM
 ~/.hermes/profiles/<profile>/skills/…/scripts/ingest.py         ← second copy, same bytes
         ▲
         │  installed from this repo by mac/deploy.sh (tests first, atomic, rollback)
-<clone>/mac/…             ← source of truth
+<clone>/mac/…                                                ← source of truth
 ```
 
 The live paths are deliberately **not** symlinks into this repo: `/Volumes/Data` is an external

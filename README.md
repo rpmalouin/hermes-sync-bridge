@@ -100,3 +100,29 @@ Ownership is in the next section — their deploy step is theirs to run.
   `Co-edit log.md`.
 - **Adjacent tooling not yet consolidated**: `vault-drift-report.py`, `container-sync*.py`,
   `vault-audit/`. Same house style, different job; they can join later under `mac/`.
+
+## Configuration, not hardcoded hosts
+
+Nothing host-specific is compiled in. `config/mailbox.env.example` and `config/paths.example.yaml`
+are the templates, and the scripts read `MAILBOX_ROOT`, `MAILBOX_SCHEMA`, `VAULT_ROOT`,
+`KANBAN_VAULT` and `HATCHDOOR_VAULT_ID` from the environment. The paths in the examples describe
+the shape of a working deployment rather than a machine: copy the example, edit the copy, never
+commit it.
+
+Two consequences worth knowing before you deploy:
+
+- **A missing vault root is a hard error.** `ingest.py` stops with a sentence naming the variable
+  instead of reporting `applied=0` against a directory that is not there — an empty queue and a
+  misconfigured one must never look alike.
+- **A missing vault id is a hard error too.** `docker-kanban-card.py` refuses to guess which
+  Hatchdoor vault to edit.
+
+## Maintainership
+
+Built for one homelab and published because the patterns are worth reusing. New functionality gets
+added when that deployment needs it and no earlier: no support schedule, no API-stability promise,
+no roadmap. Fork it and support your fork.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

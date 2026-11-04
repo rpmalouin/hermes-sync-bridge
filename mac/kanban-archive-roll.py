@@ -27,9 +27,9 @@ Division of labour (the operator's policy, 2026-09-22):
     date** — a card archived on 31 December and rolled on 2 January belongs in the December year's
     note, and routing on the run date would misfile it. (A done-sourced card has no stamp, so it is
     dated by the run.)
-  * the operator deletes these notes whenever he likes. A missing note is never an error: the next roll
+  * The operator deletes these notes whenever they like. A missing note is never an error: the next roll
     recreates it, so a deletion is a deliberate prune rather than a breakage.
-  * **newest first** (the operator, 2026-09-23): sections are emitted newest-date-first with `## Archived
+  * **newest first** (operator, 2026-09-23): sections are emitted newest-date-first with `## Archived
     undated` last, and a card arriving for a date whose section already exists is PREPENDED to that
     section. The rule reads at both levels — the newest date first, and within a date the newest
     arrival first — because he reads the note top-down and expects the cards he has just filed to be
@@ -61,13 +61,14 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import os
 import re
 import shutil
 import sys
 from collections import Counter
 from pathlib import Path
 
-DEFAULT_VAULT = Path("/Volumes/Data/vault")
+DEFAULT_VAULT = Path(os.environ.get("VAULT_ROOT") or "/Volumes/Data/vault")
 HEAD_RX = re.compile(r"^##\s+(.+?)\s*$")
 SECTION_RX = re.compile(r"^##\s+Archived\s+(.+?)\s*$")
 CARD_RX = re.compile(r"^[ \t]*- \[[ x]\][ \t]*(.*\S)?[ \t]*$")

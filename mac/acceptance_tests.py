@@ -23,7 +23,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 INGEST = HERE / "ingest.py"
 SANDBOX = Path("/tmp/mailbox-acceptance")
-REAL_VAULT = Path("/Volumes/Data/vault")
+REAL_VAULT = Path(os.environ.get("VAULT_ROOT") or "/Volumes/Data/vault")
 PY = sys.executable or "python3"
 
 

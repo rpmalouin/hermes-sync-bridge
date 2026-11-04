@@ -7,16 +7,18 @@ the queue: this host *adopts* the repo for its own scripts. Edit here, install w
 silently — so deploy installs copies: tested first, one file at a time, atomically, with rollback.
 Run `./docker/deploy.sh --check` to see drift between this directory and what actually runs.
 
+`docker-kanban-card.py` reads the board's vault id from `HATCHDOOR_VAULT_ID`; without it the
+script stops with a sentence rather than guessing which vault to edit.
+
 ## What is here
 
 | file | live path | status |
 |---|---|---|
 | `generate.py` | `/appdata/hermes-Mac-Updates/generate.py` | the producer; lives in the queue by contract, do not move it |
 | `hermes-docker-inbox.py` | `~/.hermes/scripts/hermes-docker-inbox.py` | the VM's inbox consumer — claims `hermes-docker`/`any`, parks asks, never touches the vault |
-| `hermes-docker-inbox-cron.sh` | `~/.hermes/scripts/hermes-docker-inbox-cron.sh` | the wrapper cron `cron-job-id` calls every minute |
+| `hermes-docker-inbox-cron.sh` | `~/.hermes/scripts/hermes-docker-inbox-cron.sh` | the wrapper cron `<cron-job-id>` calls every minute |
 | `hermes-docker-request-close.py` | `~/.hermes/scripts/hermes-docker-request-close.py` | closes a parked ask and publishes the contract's receipt |
 | `docker-kanban-card.py` | `~/.hermes/scripts/docker-kanban-card.py` | `open` / `done` / `list` / `check` — cards our work in the shared Kanban with the plugin's exact shape, a count tripwire and hash-guarded edits |
-| `paperless-docling-ocr.py` | `~/.hermes/scripts/paperless-docling-ocr.py` | `scan` / `convert <id> [--apply]` / `revert <id>` — docling extraction for paperless-ngx: holds the docling API key, sends the whole document once, writes `content` only behind `--apply` with a rollback copy and a `docling-ocr` tag. Replaced paperless-gpt's unauthenticated docling provider (2026-10-22). |
 | `deploy.sh` | — | installs the rows above; `--check`, `--dry-run` |
 
 ## How a change lands here
@@ -24,7 +26,7 @@ Run `./docker/deploy.sh --check` to see drift between this directory and what ac
 0. **Card it first — before you touch anything.** `docker-kanban-card.py open "<title>"` opens the
    card in `Hermes-dockerVM (Active)` (`Status: active`, box **unchecked**, `Context` linked to a
    dated note in `Hermes/Hermes Logs/dockerVM/`) and then send the transition as a `dev_update`
-   (`modified`) so movement is heard rather than discovered. the operator reads the board as the record of
+   (`modified`) so movement is heard rather than discovered. The operator reads the board as the record of
    what is *happening*; a card that arrives after the work describes nothing. This step is not
    advice: on 2026-09-22 sixteen minutes of real work — three scripts, a deploy step and a consumer
    crash fix — ran against an empty column because the rule lived in a session's memory.

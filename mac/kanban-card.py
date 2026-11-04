@@ -25,12 +25,16 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import sys
 from pathlib import Path
 
-BOARD = Path("/Volumes/Data/vault/Hermes/Hermes Kanban.md")
+# The same override ingest.py honours; the example deployment keeps the vault on an external
+# volume, so the default is that volume and never a home directory.
+VAULT_ROOT = Path(os.environ.get("VAULT_ROOT") or "/Volumes/Data/vault")
+BOARD = VAULT_ROOT / "Hermes/Hermes Kanban.md"
 HEAD_RX = re.compile(r"^##\s+(.+?)\s*$")
 CARD_RX = re.compile(r"^[ \t]*- \[[ x]\][ \t]*(.*\S)?[ \t]*$")
 INDENT_RX = re.compile(r"^([ \t]+|\s*$)")

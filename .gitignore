@@ -36,3 +36,27 @@ recent-updates.json
 config/local/
 config/*.local.*
 .env
+
+# Secrets and credential material — nothing here belongs in a public repo
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+credential*.json
+service-account*.json
+
+# Runtime state, logs and analysis artifacts
+logs/
+reports/
+*.log
+*.jsonl
+*.db
+*.db-shm
+*.db-wal
+*.sqlite*
+.pytest_cache/
+.code-review-graph/

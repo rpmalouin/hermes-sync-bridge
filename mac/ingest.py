@@ -1261,6 +1261,11 @@ def drain_queue(root: Path, vault: Path, args, notices: list) -> dict:
     made a one-character envelope mismatch look like "the consumer skipped our
     messages" and let a real request be filed as a log line and closed.
     """
+    if not vault.is_dir():
+        raise SystemExit(
+            f"FATAL: vault root {vault} is not a directory — set VAULT_ROOT (or pass --vault).\n"
+            "       A missing vault must not read as an empty queue."
+        )
     L = layout(root)
     c = dict(applied=0, duplicates=0, failed=0, requeued=0, claim_lost=0, claim_errors=0,
              coerced=0, parked=0, new_for_others=0)

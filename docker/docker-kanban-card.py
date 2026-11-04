@@ -28,13 +28,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-VAULT_ID = "vault-id"
+# The Hatchdoor vault that holds the board. Instance-specific, so it is configuration, and it
+# is read from the same environment the MCP shim beside this script uses.
+VAULT_ID = os.environ.get("HATCHDOOR_VAULT_ID", "")
 SLUG = "hermes-kanban"
 HERE = Path(__file__).resolve().parent
 HELPER_NAME = "hatchdoor-mcp-call.py"
@@ -62,6 +65,14 @@ def resolve_helper() -> Path:
 
 
 HELPER = str(resolve_helper())
+
+
+def vault_id() -> str:
+    """The configured vault id, or a sentence naming the variable that is missing."""
+    if not VAULT_ID:
+        raise SystemExit("HATCHDOOR_VAULT_ID is not set — export the id of the Hatchdoor vault\n"
+                         "that holds the Kanban board (see docker/README.md).")
+    return VAULT_ID
 ACTIVE = "Hermes-dockerVM (Active)"
 DONE = "Done"
 # Backlog is the shared "not yet" column: unchecked box, Status: backlog. It is
@@ -112,7 +123,7 @@ def note_exists(note: str):
     assuming: a `slug` of null means no such note.
     """
     out = subprocess.run([sys.executable, HELPER, "resolve_wikilink",
-                          json.dumps({"vault_id": VAULT_ID, "target": note})],
+                          json.dumps({"vault_id": vault_id(), "target": note})],
                          capture_output=True, text=True, timeout=180)
     if out.returncode != 0 or not out.stdout.strip():
         return None
@@ -126,7 +137,7 @@ def note_exists(note: str):
 
 
 def read_board() -> tuple[str, str]:
-    note = mcp("get_note", {"slug": SLUG, "vault_id": VAULT_ID})
+    note = mcp("get_note", {"slug": SLUG, "vault_id": vault_id()})
     if "note" not in note:
         # Hatchdoor answers with a structured refusal instead of a note when the vault is
         # unreachable (e.g. its SMB share is down: vault_read_unavailable / "Host is down"). Say
@@ -141,7 +152,7 @@ def read_board() -> tuple[str, str]:
 
 def write_board(old: str, new: str, summary: str) -> str:
     result = mcp("edit_note", {
-        "slug": SLUG, "vault_id": VAULT_ID, "old_string": old, "new_string": new,
+        "slug": SLUG, "vault_id": vault_id(), "old_string": old, "new_string": new,
         "expected_content_hash": read_board()[1], "commit_summary": summary})
     return result.get("content_hash", "?")
 

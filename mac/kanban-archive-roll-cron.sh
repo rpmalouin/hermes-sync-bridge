@@ -2,7 +2,7 @@
 # kanban-archive-roll-cron.sh — the scheduled half of the filing rule.
 #
 # Ticked cards in the board's `Done` column ARE the definition of "finished", and this files them
-# into the year note with no human action (the operator, 2026-09-23: "let you do the archiving, not manually
+# into the year note with no human action (operator, 2026-09-23: "let you do the archiving, not manually
 # by me"). It is deliberately SILENT when there is nothing to do: cron output is delivered verbatim,
 # so a nightly "nothing to file" is noise, and the watchdog contract in this homelab is empty
 # stdout = say nothing.
@@ -21,7 +21,7 @@
 # roller refuses (rc=2) rather than half-writing if any invariant would break; it rolls back itself.
 set -uo pipefail
 
-VAULT="${KANBAN_VAULT:-/Volumes/Data/vault}"
+VAULT="${KANBAN_VAULT:-${VAULT_ROOT:-/Volumes/Data/vault}}"
 ROLL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/kanban-archive-roll.py"
 BOARD="$VAULT/Hermes/Hermes Kanban.md"
 

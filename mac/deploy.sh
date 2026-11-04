@@ -32,11 +32,16 @@ fi
 # ---- repo file -> live path --------------------------------------------------------------
 pairs() {
   local sk1="$TARGET_HOME/.hermes/skills/homelab/hermes-mac-ingest"
-  local sk2="$TARGET_HOME/.hermes/profiles/<profile>/skills/homelab/hermes-mac-ingest"
   echo "$REPO/mac/ingest.py|$sk1/scripts/ingest.py"
   echo "$REPO/mac/acceptance_tests.py|$sk1/scripts/acceptance_tests.py"
-  echo "$REPO/mac/ingest.py|$sk2/scripts/ingest.py"
-  echo "$REPO/mac/acceptance_tests.py|$sk2/scripts/acceptance_tests.py"
+  # Every profile that carries its own copy of the skill gets the same bytes. The list is
+  # discovered, not hardcoded: a profile added or removed on this host is never drift here.
+  local sk
+  for sk in "$TARGET_HOME"/.hermes/profiles/*/skills/homelab/hermes-mac-ingest; do
+    [ -d "$sk" ] || continue
+    echo "$REPO/mac/ingest.py|$sk/scripts/ingest.py"
+    echo "$REPO/mac/acceptance_tests.py|$sk/scripts/acceptance_tests.py"
+  done
   echo "$REPO/mac/kanban-card.py|$TARGET_HOME/.hermes/scripts/kanban-card.py"
   echo "$REPO/mac/kanban-archive-roll.py|$TARGET_HOME/.hermes/scripts/kanban-archive-roll.py"
   echo "$REPO/mac/kanban-archive-roll-cron.sh|$TARGET_HOME/.hermes/scripts/kanban-archive-roll-cron.sh"

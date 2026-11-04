@@ -2,9 +2,13 @@
 #
 # The same logical locations, as each host sees them. Keep this file honest: it is the quickest
 # way to answer "where does that actually live?" six months from now.
+#
+# These values describe the SHAPE of a working deployment, not a particular machine. The scripts
+# read the overrides listed at the bottom (VAULT_ROOT, MAILBOX_ROOT, KANBAN_VAULT); swap in your
+# own mount points and vault name.
 
 mac:
-  queue:        /Volumes/appdata/hermes-Mac-Updates          # SMB mount of the DockerVM's share
+  queue:        /Volumes/appdata/hermes-Mac-Updates          # SMB mount of the other host's share
   vault:        /Volumes/Data/vault
   board:        /Volumes/Data/vault/Hermes/Hermes Kanban.md
   board_archive_dir: /Volumes/Data/vault/Hermes/05 Archive
@@ -12,7 +16,7 @@ mac:
   live_scripts: ~/.hermes/scripts
   live_skill:   ~/.hermes/skills/homelab/hermes-mac-ingest
   profile_skill: ~/.hermes/profiles/<profile>/skills/homelab/hermes-mac-ingest
-  repo:         <clone>
+  repo:         <your clone>
 
 dockervm:
   queue:        /appdata/hermes-Mac-Updates                  # native path on that host
@@ -25,3 +29,10 @@ consumers:
   mac:    hermes-mac
   docker: hermes-docker
   any:    any
+
+# Environment overrides the scripts honour, in place of the values above:
+#   VAULT_ROOT          the vault root on this host  (default /Volumes/Data/vault)
+#   KANBAN_VAULT        the archive roller's vault   (falls back to VAULT_ROOT)
+#   MAILBOX_ROOT        the queue on this host       (default /Volumes/appdata/hermes-Mac-Updates)
+#   MAILBOX_SCHEMA      the canonical SCHEMA.md, read from the queue, never from a copy
+#   HATCHDOOR_VAULT_ID  the vault id the board tooling edits (no default: it is an instance id)
