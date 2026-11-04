@@ -35,12 +35,34 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# The Hatchdoor vault that holds the board. Instance-specific, so it is configuration, and it
-# is read from the same environment the MCP shim beside this script uses.
-VAULT_ID = os.environ.get("HATCHDOOR_VAULT_ID", "")
+# The Hatchdoor vault that holds the board. Instance-specific, so it is configuration: an explicit
+# environment variable, then the same per-machine instance file the Mac-side tools read, then a
+# sentence. The order matches mac/kanban-card.py on purpose — a docker-side cron job or a fresh
+# shell has an environment too, but the instance file is the one source that survives both.
 SLUG = "hermes-kanban"
 HERE = Path(__file__).resolve().parent
 HELPER_NAME = "hatchdoor-mcp-call.py"
+INSTANCE_ENV = Path(os.environ.get("SYNC_BRIDGE_ENV") or (Path.home() / ".hermes/sync-bridge.env"))
+
+
+def instance_var(key: str) -> str | None:
+    """Value of KEY from the instance file, or None. A missing file is not an error.
+
+    Duplicated from mac/kanban-card.py rather than shared: these scripts are installed into two
+    different directories on two hosts and must stay standalone.
+    """
+    try:
+        text = INSTANCE_ENV.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line or "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        if k.strip() == key:
+            return v.strip().strip('"').strip("'") or None
+    return None
 
 
 def resolve_helper() -> Path:
@@ -68,11 +90,17 @@ HELPER = str(resolve_helper())
 
 
 def vault_id() -> str:
-    """The configured vault id, or a sentence naming the variable that is missing."""
-    if not VAULT_ID:
+    """The configured vault id: the environment first, then the instance file, else a sentence.
+
+    A missing id is a hard error rather than a silent empty run — the board tool must never guess
+    which vault to edit, and it must never look like it worked when it did nothing.
+    """
+    configured = os.environ.get("HATCHDOOR_VAULT_ID") or instance_var("HATCHDOOR_VAULT_ID")
+    if not configured:
         raise SystemExit("HATCHDOOR_VAULT_ID is not set — export the id of the Hatchdoor vault\n"
-                         "that holds the Kanban board (see docker/README.md).")
-    return VAULT_ID
+                         f"that holds the Kanban board, or put it in {INSTANCE_ENV}\n"
+                         "(see docker/README.md and config/instance.env.example).")
+    return configured
 ACTIVE = "Hermes-dockerVM (Active)"
 DONE = "Done"
 # Backlog is the shared "not yet" column: unchecked box, Status: backlog. It is

@@ -7,8 +7,10 @@ the queue: this host *adopts* the repo for its own scripts. Edit here, install w
 silently — so deploy installs copies: tested first, one file at a time, atomically, with rollback.
 Run `./docker/deploy.sh --check` to see drift between this directory and what actually runs.
 
-`docker-kanban-card.py` reads the board's vault id from `HATCHDOOR_VAULT_ID`; without it the
-script stops with a sentence rather than guessing which vault to edit.
+`docker-kanban-card.py` reads the board's vault id from `HATCHDOOR_VAULT_ID` — an exported variable,
+or the same per-machine instance file the Mac-side tools use (`$SYNC_BRIDGE_ENV`, default
+`~/.hermes/sync-bridge.env`) — and without either it stops with a sentence rather than guessing which
+vault to edit. The instance file is the one source that survives both a fresh shell and cron.
 
 ## What is here
 
