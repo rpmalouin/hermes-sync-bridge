@@ -116,20 +116,15 @@ def main() -> int:
 
     if args.dry_run:
         print(f"would archive requests/{parked.name} -> processed/{message.get('created_at', '')[:7]}/")
-        print(f"would mark state/{args.message_id}.request.json done")
         print(f"would publish a receipt to {author}: {summary}")
+        print(f"would then mark state/{args.message_id}.request.json done with receipt_message_id = the published id")
         return 0
 
-    target_dir = PROCESSED / (message.get("created_at") or now_z())[:7]
-    target_dir.mkdir(parents=True, exist_ok=True)
-    os.rename(parked, target_dir / parked.name)
-
-    record_path = STATE / f"{args.message_id}.request.json"
-    record = json.loads(record_path.read_text(encoding="utf-8")) if record_path.exists() else {}
-    record.update({"status": "done", "closed_at": now_local(), "closed_by": "hermes-docker",
-                   "close_summary": summary})
-    write_json(record_path, record)
-
+    # Publish FIRST, then archive and record. A receipt is the only evidence the ask was answered, so
+    # the record must never say "done" before one exists on the wire; and the receipt's own id is
+    # written back, so a closed ask can be traced to its receipt without scanning processed/ — the
+    # shape the Mac records in mac/ingest.py:1067. A failed publish leaves the ask parked and the
+    # record untouched, which makes a retry a plain retry.
     receipt = subprocess.run(
         [sys.executable, str(Q / "generate.py"),
          "--item", f"request-closed-{args.message_id}",
@@ -139,13 +134,26 @@ def main() -> int:
          "--detail", f"Closed by the DockerVM session. Request was: {payload.get('request', '')}",
          "--detail", f"Acceptance as set by the asker: {payload.get('acceptance', '(none given)')}",
          "--detail", f"Parked message archived to processed/{(message.get('created_at') or '')[:7]}/; "
-                     f"state/{args.message_id}.request.json now reads done."],
+                     f"state/{args.message_id}.request.json will read done with this receipt's id."],
         capture_output=True, text=True)
     if receipt.returncode != 0:
-        print("receipt publish failed:", receipt.stderr.strip(), file=sys.stderr)
+        print("receipt publish failed (ask left parked, record untouched):",
+              receipt.stderr.strip(), file=sys.stderr)
         return 1
+    receipt_path = Path(receipt.stdout.strip())
+    receipt_id = receipt_path.stem
 
-    print(f"closed {args.message_id}: archived, marked done, receipt -> {receipt.stdout.strip()}")
+    target_dir = PROCESSED / (message.get("created_at") or now_z())[:7]
+    target_dir.mkdir(parents=True, exist_ok=True)
+    os.rename(parked, target_dir / parked.name)
+
+    record_path = STATE / f"{args.message_id}.request.json"
+    record = json.loads(record_path.read_text(encoding="utf-8")) if record_path.exists() else {}
+    record.update({"status": "done", "closed_at": now_local(), "closed_by": "hermes-docker",
+                   "close_summary": summary, "receipt_message_id": receipt_id})
+    write_json(record_path, record)
+
+    print(f"closed {args.message_id}: archived, marked done, receipt {receipt_id} -> {receipt_path}")
     digest(f"CLOSED {args.message_id} (asked by {author}): {summary}")
     return 0
 
