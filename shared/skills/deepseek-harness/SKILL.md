@@ -1,7 +1,7 @@
 ---
 name: deepseek-harness
 description: "Use for any coding task; delegates to the local dsh CLI."
-version: 1.3.0
+version: 1.3.1
 author: Ron Malouin
 license: MIT
 platforms: [linux, macos]
@@ -55,9 +55,11 @@ Rules earned by running it on both hosts:
   emits `command: uvx`, which spawns a second, unmanaged copy next to the venv one.
 - Never copy a wrapper over `bin.js` with `cp`: `cp` follows the symlink and overwrites the build
   output. `rm` the link first, then copy.
-- The Mac's harness graph carries a `.code-review-graphignore` dropping `*.i18n.yaml`,
-  `package.json`, `tsconfig*.json` and `locale/` — 241,461 nodes -> 182,649 at the same commit.
-  Compare node counts only against a host with the same ignore set.
+- The harness graph carries a `.code-review-graphignore` dropping `*.i18n.yaml`, `package.json`,
+  `tsconfig*.json` and `locale/`. At `6817d90309` both hosts land on **10,429 files exact** with
+  182,455 nodes / 1,961,605 edges (Mac) and 182,453 / 1,964,627 (dockerVM): a 2-node 0.15%-edge
+  residual that comes from `forget` + `update` here versus a clean rebuild there. Compare per kind
+  and per file count, never on the totals alone.
 
 ## When to use
 
