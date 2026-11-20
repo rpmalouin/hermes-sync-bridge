@@ -17,16 +17,36 @@ crg:
   version: "2.4.0"
   reason: >-
     Fixes the uvx/multi-copy preference that let an older copy answer a newer graph,
-    adds `doctor`, and makes `install --platform dsh` write the home-level
-    $DSH_HOME/cordis.patch.yml that only dsh 0.2.2-rc.5 composes.
+    and makes `install --platform dsh` write the home-level $DSH_HOME/cordis.patch.yml
+    that only dsh 0.2.2-rc.5 composes. (`doctor` exists on main, not in 2.4.0.)
+
+embeddings:
+  provider: "local"
+  model: "all-MiniLM-L6-v2"            # sentence-transformers id - MUST be identical on both
+  extra: "code-review-graph[embeddings]"
+  torch: "2.15.0"                       # vm uses the +cpu wheel from download.pytorch.org/whl/cpu
+  sentence_transformers: "6.3.0"
+  embeddable: "Function, Class, Test, DocSection"   # File/JsonPath/YamlPath carry no prose
+  reason: >-
+    A second, silent drift axis: node and edge counts are identical whether or not
+    embeddings exist, so two hosts on different models answer the same semantic query
+    differently while every count you diff still matches. Same model, or semantic
+    results stop being comparable.
+  counts:                               # measured, not estimated
+    harness_mac: 172026                 # 182,455 nodes - 10,429 File - 27,015 JsonPath - 13,817 YamlPath
+    harness_vm: 172024                  # 2 fewer Class nodes on that parse
+  verify: "list_graph_stats_tool reports 'Embeddings: N nodes embedded'; `status --json` has no embeddings key at all, so an absent key is not zero."
 
 dsh:
   repo: "rpmalouin/deepseek-harness"
-  sha: "8255317b0f"
+  sha: "6817d90309"
   version: "0.2.2-rc.5"
   node_min: "24.9.0"
   pnpm: "11.28.5"
   build: each host builds its own node_modules — darwin and linux output is not shareable
+  reason: >-
+    6817d90309 is 8255317b0f plus the committed .code-review-graphignore, which both
+    hosts need or their graph baselines are not comparable.
 
 wrapper:
   path_in_repo: "shared/bin/dsh-wrapper.sh"

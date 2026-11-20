@@ -1,7 +1,7 @@
 ---
 name: deepseek-harness
 description: "Use for any coding task; delegates to the local dsh CLI."
-version: 1.3.2
+version: 1.3.3
 author: Ron Malouin
 license: MIT
 platforms: [linux, macos]
@@ -63,6 +63,14 @@ Rules earned by running it on both hosts:
 - The build summary's `Full build: ... N edges` line is **not** the graph's edge count: it prints a
   pre-dedupe total, 2,042,161 against a reported 2,021,106 on the first build and 1,985,675 against
   1,964,631 after the ignore file. Quote `status --json` or `list_graph_stats_tool`, never the summary.
+- Embeddings are a **second drift axis that no count will show**: `code-review-graph embed --provider
+  local --model all-MiniLM-L6-v2` (needs the `code-review-graph[embeddings]` extra) adds zero nodes and
+  zero edges, so two hosts on different models pass every diff and answer the same semantic query
+  differently. Same model on both hosts or semantic results are not comparable. It embeds only the
+  prose kinds — Function, Class, Test, DocSection — so ~94% of nodes is complete, not a failure (172,026
+  here / 172,024 on the VM, the same 2 Class nodes apart). `status --json` has no embeddings key at all;
+  the count appears in `list_graph_stats_tool`, and semantic search goes live without a gateway restart
+  because the server reads the store, not a startup snapshot.
 
 ## When to use
 
@@ -244,6 +252,28 @@ the card and the reply. Never "done". The reviewer runs `workspace-write`, becau
 
 Full contract, reviewer prompt template, fix-loop caps and ledger format:
 [references/reviewer-contract.md](references/reviewer-contract.md).
+
+## Publishing this skill to the peer host
+
+The skill is shipped as files in `hermes-sync-bridge/shared/skills/deepseek-harness/` and installed by
+copying on the other host, so that directory — not this file — is the artifact a peer actually reads.
+
+- **Copy every file the SKILL.md links, not only the one you edited.** A publish that carries a changed
+  `SKILL.md` and forgets a referenced file ships a skill whose link resolves to nothing on the peer;
+  where the missing file is the reviewer contract, their reviewer has nothing to read and invents one.
+  Extract the targets (`grep -o ']([^)]*)' SKILL.md`), then test each relative one with `test -e` in the
+  repo directory before committing.
+- **A reference sitting beside `SKILL.md` is not the file a `references/<name>.md` link points at.**
+  Keep the referenced layout under `references/` in the repo and let the peer's install copy the
+  directory; a flat copy next to `SKILL.md` resolves nowhere.
+- **Verify from the installed side.** After the peer installs, re-extract the targets and test them in
+  the installed directory — a link can resolve in the repo and dangle wherever the peer put it.
+- **Bump `version:` on every correctness fix and quote the file's `sha256` in the hand-off**, so the
+  peer can tell whether it holds the fix by comparing bytes rather than prose. Two version bumps in one
+  hour is cheaper than a host reading a skill that states numbers its own graph contradicts.
+- **A stale reference is worse than a missing one.** A reference that describes the previous release as
+  current reads authoritative and is wrong in the direction a peer trusts; when the pin moves, re-read
+  every `references/` file against the new build in the same pass that bumps `SKILL.md`.
 
 ## Configuration
 
