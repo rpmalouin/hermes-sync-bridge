@@ -1,7 +1,7 @@
 ---
 name: deepseek-harness
 description: "Use for any coding task; delegates to the local dsh CLI."
-version: 1.3.1
+version: 1.3.2
 author: Ron Malouin
 license: MIT
 platforms: [linux, macos]
@@ -56,10 +56,13 @@ Rules earned by running it on both hosts:
 - Never copy a wrapper over `bin.js` with `cp`: `cp` follows the symlink and overwrites the build
   output. `rm` the link first, then copy.
 - The harness graph carries a `.code-review-graphignore` dropping `*.i18n.yaml`, `package.json`,
-  `tsconfig*.json` and `locale/`. At `6817d90309` both hosts land on **10,429 files exact** with
-  182,455 nodes / 1,961,605 edges (Mac) and 182,453 / 1,964,627 (dockerVM): a 2-node 0.15%-edge
-  residual that comes from `forget` + `update` here versus a clean rebuild there. Compare per kind
-  and per file count, never on the totals alone.
+  `tsconfig*.json` and `locale/`. At `6817d90309` a **clean rebuild** lands on 10,429 files on both
+  hosts: 182,455 nodes / 1,964,631 edges here, 182,453 / 1,964,627 there — 2 nodes and 4 edges apart.
+  A `forget` + `update` pass instead of a rebuild leaves edges short by ~3,000 (that path does not
+  re-resolve every bare call target), so rebuild before comparing two hosts.
+- The build summary's `Full build: ... N edges` line is **not** the graph's edge count: it prints a
+  pre-dedupe total, 2,042,161 against a reported 2,021,106 on the first build and 1,985,675 against
+  1,964,631 after the ignore file. Quote `status --json` or `list_graph_stats_tool`, never the summary.
 
 ## When to use
 
