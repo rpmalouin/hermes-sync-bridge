@@ -15,6 +15,12 @@ updated_by: hermes-mac
 
 crg:
   version: "2.4.0"
+  install: >-
+    Both hosts install into a venv, never the system interpreter: this host
+    $HOME/.local/venvs/crg/bin/python3, dockerVM /root/.local/venvs/crg/bin/python3.
+    The CLI on PATH is a symlink to that venv's console script on both
+    ($HOME/.local/bin/code-review-graph here, /usr/local/bin/code-review-graph there), and the
+    MCP server entry names the venv python directly. Verified 2026-11-20 on both hosts.
   reason: >-
     Fixes the uvx/multi-copy preference that let an older copy answer a newer graph,
     and makes `install --platform dsh` write the home-level $DSH_HOME/cordis.patch.yml
@@ -64,7 +70,7 @@ hosts:
     key_file: "$HOME/.hermes/.env"
     dsh_home: "$HOME/.dsh"
   vm:
-    crg_python: "/usr/bin/python3"          # PEP 668: pip needs --break-system-packages
+    crg_python: "/root/.local/venvs/crg/bin/python3"   # venv, matching the Mac's pattern
     crg_copies_expected: 1
     checkout: "/appdata/deepseek-harness"
     node_search: ["/root/.hermes/tools/node-*-linux-x64/bin/node", "/usr/local/bin/node", "/usr/bin/node"]
