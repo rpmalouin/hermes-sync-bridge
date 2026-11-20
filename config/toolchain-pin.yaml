@@ -49,13 +49,19 @@ embeddings:
     rebuild the table held exactly the surviving nodes with 0 orphans, so no re-embed was needed.
 
 harness_graph:                          # measured 2026-11-20 at f3881ec040, after the ignore fix
-  files: 9505
-  mac: {nodes: 156291, edges: 1939391}
-  vm:  {nodes: 156289, edges: 1939387}  # expected 2 nodes / 4 edges lower - measure it, do not assume
+  files: 9505                            # exact on both hosts - the strongest single check
+  mac: {nodes: 156291, edges: 1939391, embeddings: 146786}
+  vm:  {nodes: 156289, edges: 1939387, embeddings: 146784}   # measured there, verified here
+  residual: >-
+    2 nodes and 4 edges, and it is Class: the VM parses 12,970 where this host parses 12,972. Each
+    class carries one CONTAINS and one REFERENCES edge, so the edge delta is 2 + 2. Every other kind
+    matches exactly, at two different baselines, which is what makes it a parser difference rather
+    than drift.
   rule: >-
     Compare rebuild-to-rebuild only: a forget+update pass leaves ~3,000 CALLS/TESTED_BY edges behind
     and the same tree then reports a smaller graph. The build summary's edge tally is pre-dedupe
-    (1,960,435 printed against 1,939,391 stored) - quote status --json or list_graph_stats_tool.
+    (1,960,431 printed against 1,939,387 stored on the VM's rebuild) - quote status --json or
+    list_graph_stats_tool. Embeddings == nodes - File rows, and a rebuild prunes the orphans itself.
 
 dsh:
   repo: "rpmalouin/deepseek-harness"
