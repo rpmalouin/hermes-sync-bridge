@@ -1,0 +1,53 @@
+# Single source of truth for the toolchain both Hermes hosts must run.
+#
+# The Mac holds this pin. A change is applied to both hosts in ONE window, because
+# the code-review-graph schema migration (9 -> 15 in 2.4.0) is forward-only: a host
+# left behind cannot read a graph the other host has opened, and every read then errors.
+#
+# Consumers: mac/parity-check.sh (report drift, exit 1) and mac/parity-apply.sh
+# (apply to both hosts or abort). Neither is allowed to open the other host's
+# graph.db with a newer binary — cross-host inspection reads the sqlite `metadata`
+# table only.
+
+schema: 1
+updated: "2026-11-20"
+updated_by: hermes-mac
+
+crg:
+  version: "2.4.0"
+  reason: >-
+    Fixes the uvx/multi-copy preference that let an older copy answer a newer graph,
+    adds `doctor`, and makes `install --platform dsh` write the home-level
+    $DSH_HOME/cordis.patch.yml that only dsh 0.2.2-rc.5 composes.
+
+dsh:
+  repo: "rpmalouin/deepseek-harness"
+  sha: "8255317b0f"
+  version: "0.2.2-rc.5"
+  node_min: "24.9.0"
+  pnpm: "11.28.5"
+  build: each host builds its own node_modules — darwin and linux output is not shareable
+
+wrapper:
+  path_in_repo: "shared/bin/dsh-wrapper.sh"
+  install:
+    mac: "$HOME/.local/bin/dsh"
+    vm: "/usr/local/bin/dsh"
+
+hosts:
+  mac:
+    crg_python: "$HOME/.local/venvs/crg/bin/python3"
+    crg_copies_expected: 1
+    checkout: "$HOME/Data/Development/deepseek-harness"
+    node_search: ["/opt/homebrew/bin/node", "/usr/local/bin/node"]
+    permission_mode: "workspace-write"
+    key_file: "$HOME/.hermes/.env"
+    dsh_home: "$HOME/.dsh"
+  vm:
+    crg_python: "/usr/bin/python3"          # PEP 668: pip needs --break-system-packages
+    crg_copies_expected: 1
+    checkout: "/appdata/deepseek-harness"
+    node_search: ["/root/.hermes/tools/node-*-linux-x64/bin/node", "/usr/local/bin/node", "/usr/bin/node"]
+    permission_mode: "danger-full-access"   # workspace-write has no usable backend there
+    key_file: "/root/.hermes/.env"
+    dsh_home: "/root/.dsh"
