@@ -24,8 +24,20 @@ for arg in "$@"; do
 done
 
 # ---- the external volume gate ------------------------------------------------------------
-if ! mount | grep -q " on /Volumes/Data "; then
-  echo "FATAL: /Volumes/Data is not mounted — this repo isn't there, so there is nothing safe to deploy." >&2
+# The gate is derived from the repo's own path, never a hardcoded mount point: /Volumes/Data is
+# gone and a literal there made --check FATAL before it compared anything. `pwd -P` follows the
+# symlink because the volume that can unmount is the physical one. A checkout on the internal
+# disk has no /Volumes/<name> component and skips the gate — it is trivially present.
+REPO_PHYSICAL="$(cd "$REPO" && pwd -P)"
+REPO_VOLUME=""
+case "$REPO_PHYSICAL" in
+  /Volumes/?*)
+    _rest="${REPO_PHYSICAL#/Volumes/}"
+    REPO_VOLUME="/Volumes/${_rest%%/*}"
+    ;;
+esac
+if [ -n "$REPO_VOLUME" ] && ! mount | grep -qF " on $REPO_VOLUME "; then
+  echo "FATAL: this repo resolves to $REPO_PHYSICAL, on volume $REPO_VOLUME, which is not mounted — nothing under $REPO_VOLUME is visible, so there is nothing safe to deploy." >&2
   exit 1
 fi
 
@@ -45,6 +57,13 @@ pairs() {
   echo "$REPO/mac/kanban-card.py|$TARGET_HOME/.hermes/scripts/kanban-card.py"
   echo "$REPO/mac/kanban-archive-roll.py|$TARGET_HOME/.hermes/scripts/kanban-archive-roll.py"
   echo "$REPO/mac/kanban-archive-roll-cron.sh|$TARGET_HOME/.hermes/scripts/kanban-archive-roll-cron.sh"
+  # The parity entry point lives on the internal disk on purpose: a cron entry point behind an
+  # external volume stops consuming silently. parity_check.py is the engine both wrappers call,
+  # and the pin is installed beside it because the installed engine's repo root is ~/.hermes —
+  # without this copy the cron cannot read its source of truth.
+  echo "$REPO/mac/parity_check.py|$TARGET_HOME/.hermes/scripts/parity_check.py"
+  echo "$REPO/mac/parity-drift-cron.sh|$TARGET_HOME/.hermes/scripts/parity-drift.sh"
+  echo "$REPO/config/toolchain-pin.yaml|$TARGET_HOME/.hermes/scripts/toolchain-pin.yaml"
 }
 
 sha() { shasum -a 256 "$1" | awk '{print $1}'; }

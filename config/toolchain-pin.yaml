@@ -15,6 +15,7 @@ updated_by: hermes-mac
 
 crg:
   version: "2.4.0"
+  graph_schema: 15                       # graph.db metadata.schema_version written by 2.4.0; forward-only
   install: >-
     Both hosts install into a venv, never the system interpreter: this host
     $HOME/.local/venvs/crg/bin/python3, dockerVM /root/.local/venvs/crg/bin/python3.
@@ -92,6 +93,7 @@ hosts:
     key_file: "$HOME/.hermes/.env"
     dsh_home: "$HOME/.dsh"
   vm:
+    ssh: "dockervm"                    # `ssh dockervm` from the Mac; read by parity_check/parity-apply
     crg_python: "/root/.local/venvs/crg/bin/python3"   # venv, matching the Mac's pattern
     crg_copies_expected: 1
     checkout: "/appdata/deepseek-harness"
