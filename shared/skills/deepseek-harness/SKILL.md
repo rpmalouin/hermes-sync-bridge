@@ -1,7 +1,7 @@
 ---
 name: deepseek-harness
 description: "Use for any coding task; delegates to the local dsh CLI."
-version: 1.3.3
+version: 1.3.4
 author: Ron Malouin
 license: MIT
 platforms: [linux, macos]
@@ -56,21 +56,33 @@ Rules earned by running it on both hosts:
 - Never copy a wrapper over `bin.js` with `cp`: `cp` follows the symlink and overwrites the build
   output. `rm` the link first, then copy.
 - The harness graph carries a `.code-review-graphignore` dropping `*.i18n.yaml`, `package.json`,
-  `tsconfig*.json` and `locale/`. At `6817d90309` a **clean rebuild** lands on 10,429 files on both
-  hosts: 182,455 nodes / 1,964,631 edges here, 182,453 / 1,964,627 there — 2 nodes and 4 edges apart.
+  `tsconfig*.json` and `locale/`. At `f3881ec040` a **clean rebuild** lands on 9,505 files on both
+  hosts: 156,291 nodes / 1,939,391 edges here, 156,289 / 1,939,387 there — the same 2 nodes and 4
+  edges apart (2 extra `Class` nodes, which carry one `CONTAINS` and one `REFERENCES` each).
+  **A filename pattern needs a leading `*` or it only matches the repo root:** the matcher rewrites
+  directory patterns to `**/<dir>/**` but sends everything else to `fnmatch` against the full relative
+  path, where `*` crosses `/`. So `package.json` was inert while `*.i18n.yaml` worked, and the file
+  silently kept 26,164 nodes (14.3%) of build config until `*/package.json` and `*/tsconfig*.json`
+  were added. Probe a pattern list before rebuilding: import `_load_ignore_patterns` and
+  `_should_ignore` from `code_review_graph.incremental` and assert the nested and root cases both
+  match, which costs a second and settles it without a 2.5-minute build.
   A `forget` + `update` pass instead of a rebuild leaves edges short by ~3,000 (that path does not
   re-resolve every bare call target), so rebuild before comparing two hosts.
 - The build summary's `Full build: ... N edges` line is **not** the graph's edge count: it prints a
   pre-dedupe total, 2,042,161 against a reported 2,021,106 on the first build and 1,985,675 against
-  1,964,631 after the ignore file. Quote `status --json` or `list_graph_stats_tool`, never the summary.
+  1,964,631 after the ignore file (1,960,435 printed against 1,939,391 stored on the rebuild that
+  followed). Quote `status --json` or `list_graph_stats_tool`, never the summary.
 - Embeddings are a **second drift axis that no count will show**: `code-review-graph embed --provider
   local --model all-MiniLM-L6-v2` (needs the `code-review-graph[embeddings]` extra) adds zero nodes and
   zero edges, so two hosts on different models pass every diff and answer the same semantic query
-  differently. Same model on both hosts or semantic results are not comparable. It embeds only the
-  prose kinds — Function, Class, Test, DocSection — so ~94% of nodes is complete, not a failure (172,026
-  here / 172,024 on the VM, the same 2 Class nodes apart). `status --json` has no embeddings key at all;
-  the count appears in `list_graph_stats_tool`, and semantic search goes live without a gateway restart
-  because the server reads the store, not a startup snapshot.
+  differently. Same model on both hosts or semantic results are not comparable. The embedded set is
+  **every node kind except `File`** — `YamlPath` and `JsonPath` included, confirmed by a semantic hit
+  landing on a YamlPath node — so `embeddings == nodes - File` is the parity check (146,786 here /
+  146,784 on the VM), not a percentage of the total. A rebuild prunes embeddings for removed nodes by
+  itself: after the ignore-file rebuild the table held exactly the surviving rows with 0 orphans, so
+  no re-embed was needed. `status --json` has no embeddings key at all; the count appears in
+  `list_graph_stats_tool`, and semantic search goes live without a gateway restart because the server
+  reads the store, not a startup snapshot.
 
 ## When to use
 

@@ -39,20 +39,36 @@ embeddings:
     differently while every count you diff still matches. Same model, or semantic
     results stop being comparable.
   counts:                               # measured, not estimated
-    harness_mac: 172026                 # 182,455 nodes - 10,429 File - 27,015 JsonPath - 13,817 YamlPath
-    harness_vm: 172024                  # 2 fewer Class nodes on that parse
-  verify: "list_graph_stats_tool reports 'Embeddings: N nodes embedded'; `status --json` has no embeddings key at all, so an absent key is not zero."
+    harness_mac: 146786                 # = nodes - File rows; the embedder takes every non-File node
+    harness_vm: 146784                  # 2 fewer Class nodes on that parse
+  verify: "list_graph_stats_tool reports 'Embeddings: N nodes embedded'; `status --json` has no embeddings key at all, so an absent key is not zero. N == nodes - File nodes, on both hosts."
+  rule: >-
+    Embedded set is EVERY node kind except File (YamlPath and JsonPath included - measured by
+    subtracting File rows from the node total on two builds, and by a semantic hit landing on a
+    YamlPath node). A rebuild prunes embeddings for removed nodes by itself: after the ignore-file
+    rebuild the table held exactly the surviving nodes with 0 orphans, so no re-embed was needed.
+
+harness_graph:                          # measured 2026-11-20 at f3881ec040, after the ignore fix
+  files: 9505
+  mac: {nodes: 156291, edges: 1939391}
+  vm:  {nodes: 156289, edges: 1939387}  # expected 2 nodes / 4 edges lower - measure it, do not assume
+  rule: >-
+    Compare rebuild-to-rebuild only: a forget+update pass leaves ~3,000 CALLS/TESTED_BY edges behind
+    and the same tree then reports a smaller graph. The build summary's edge tally is pre-dedupe
+    (1,960,435 printed against 1,939,391 stored) - quote status --json or list_graph_stats_tool.
 
 dsh:
   repo: "rpmalouin/deepseek-harness"
-  sha: "6817d90309"
+  sha: "f3881ec040"
   version: "0.2.2-rc.5"
   node_min: "24.9.0"
   pnpm: "11.28.5"
   build: each host builds its own node_modules — darwin and linux output is not shareable
   reason: >-
-    6817d90309 is 8255317b0f plus the committed .code-review-graphignore, which both
-    hosts need or their graph baselines are not comparable.
+    f3881ec040 is 8255317b0f plus two graph-noise commits: the .code-review-graphignore itself
+    (6817d90309) and the fix that made its package.json/tsconfig patterns actually match nested
+    paths (f3881ec040). A host on an earlier sha indexes 26,164 more nodes of build config and its
+    baseline is not comparable.
 
 wrapper:
   path_in_repo: "shared/bin/dsh-wrapper.sh"
