@@ -4,8 +4,10 @@
 Read-only by construction. It never writes a file, never creates state, and it never asks
 code-review-graph to open a remote graph: `status`, `doctor`, `query` and the rest migrate
 `graph.db` in place on first open, which would corrupt the other host's pinned tree. The remote
-graph is read with sqlite only (mode=ro&immutable=1) through the VM's own pinned python, because
-the VM has no sqlite3 CLI and a plain mode=ro open needs the live -shm.
+graph is read with sqlite only (mode=ro) through the VM's own pinned python, because the VM has no
+sqlite3 CLI. The reader takes a real read-only lock and sees the -wal; a connection that ignored the
+-wal would report a pre-build state as current. A store that cannot be read is unevaluable, never
+drift and never ok.
 
 Exit codes: 0 = every check measured and equal; 1 = drift; 2 = nothing drifted but at least one
 check could not be measured (unreachable host, unparseable output, missing interpreter), or the
@@ -167,28 +169,32 @@ def default_pin():
 
 
 # --------------------------------------------------------------------------------------------
-# graph reads (sqlite only, read-only, immutable)
+# graph reads (sqlite only, read-only)
 # --------------------------------------------------------------------------------------------
 
 REMOTE_GRAPH_CODE = r"""
 import json, sqlite3, sys
 from urllib.parse import quote
 db = sys.argv[1]
-con = sqlite3.connect("file:" + quote(db, safe="/") + "?mode=ro&immutable=1", uri=True)
-meta = dict(con.execute("select key, value from metadata"))
-count = lambda q: con.execute(q).fetchone()[0]
-print(json.dumps({
-    "metadata": meta,
-    "nodes": count("select count(*) from nodes"),
-    "edges": count("select count(*) from edges"),
-    "embeddings": count("select count(*) from embeddings"),
-    "files": count("select count(*) from nodes where kind = 'File'"),
-}))
+try:
+    con = sqlite3.connect("file:" + quote(db, safe="/") + "?mode=ro", uri=True)
+    meta = dict(con.execute("select key, value from metadata"))
+    count = lambda q: con.execute(q).fetchone()[0]
+    print(json.dumps({
+        "metadata": meta,
+        "nodes": count("select count(*) from nodes"),
+        "edges": count("select count(*) from edges"),
+        "embeddings": count("select count(*) from embeddings"),
+        "files": count("select count(*) from nodes where kind = 'File'"),
+    }))
+except sqlite3.Error as exc:
+    print(exc, file=sys.stderr)
+    sys.exit(1)
 """
 
 
 def read_graph_local(db_path):
-    uri = "file:" + quote(str(db_path), safe="/") + "?mode=ro&immutable=1"
+    uri = "file:" + quote(str(db_path), safe="/") + "?mode=ro"
     con = sqlite3.connect(uri, uri=True)
     try:
         con.execute("pragma query_only=ON")
@@ -362,14 +368,15 @@ class Checker:
                 return self.unevaluable("graph", host, expected, error)
             if error:
                 # Could be an absent file or a file that is not a graph. An absent graph is
-                # baseline (see the brief); anything else that cannot be opened is damage.
+                # baseline (see the brief); anything else is unevaluable, because an unreadable
+                # store is neither drift nor a pass.
                 probe = self.host_run(host, ["test", "-f", str(db_path)])
                 if probe.error:
                     return self.unevaluable("graph", host, expected, probe.error)
                 if probe.rc == 0:
-                    return self.add(
-                        Row("graph", host, expected, "unreadable", "drift", f"sqlite: {error}")
-                    )
+                    # The file exists but sqlite could not read it. That is unevaluable, not
+                    # drift: an unreadable store is not a claim that the graph changed.
+                    return self.unevaluable("graph", host, expected, error)
                 if probe.rc != 1:
                     return self.unevaluable(
                         "graph", host, expected, f"cannot tell whether {db_path} exists: {error}"
